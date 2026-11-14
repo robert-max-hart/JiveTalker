@@ -1,11 +1,12 @@
-"""Signal processing that doesn't need the model: loudness, trimming, whisper breath, the `internal` room."""
+"""Signal processing that doesn't need the model: loudness, trimming, whisper breath, the `internal` room,
+`muffled`."""
 import numpy as np
 import librosa
 import scipy.ndimage as nd
 from scipy.signal import butter, sosfilt, fftconvolve
 
 SR = 24000
-# Ear-weighted level every clip is set to (before its style offset): aw() of a plain Julia line from the
+# Ear-weighted level every clip is set to (before its style offset): aw() of a plain line from the
 # 2026-11-11 reference set. Peaks of a levelled line sit around -8 dBFS, so shouts have headroom.
 LEVEL_TARGET = 32.1
 PEAK_LIMIT = 0.95
@@ -137,6 +138,14 @@ def whisper(audio, voiced, seed, p=None):
     vfr = np.array([voiced[i * hop:i * hop + hop].mean() if i * hop < len(voiced) else 0.0 for i in range(nf)])
     vm = (lvl > lvl.max() - 35) & (vfr > 0.7)                 # vowel frames
     um = (lvl > lvl.max() - 35) & (vfr < 0.3)                 # consonant frames
+    loud = lvl > lvl.max() - 35
+    # a line of nearly all voiced sounds ("I want to see the ocean more than anything") can have no frame
+    # on one side; an empty mean would turn the whole clip into NaN, so take the 15 % least/most voiced
+    # loud frames instead. Lines that have both kinds render exactly as before.
+    if not um.any():
+        um = loud & (vfr <= np.quantile(vfr[loud], 0.15))
+    if not vm.any():
+        vm = loud & (vfr >= np.quantile(vfr[loud], 0.85))
     # voice-like frames the pitch tracker missed: strong lows, little hiss
     buzzy = (lvl > lvl.max() - 30) & (vfr < 0.5) & (P2[(fr > 80) & (fr < 400)].sum(0) > 2 * P2[fr > 2500].sum(0))
     buzzy = np.pad(np.repeat(buzzy.astype(float), hop), (0, max(0, len(audio) - nf * hop)))[:len(audio)]
@@ -248,6 +257,32 @@ def internal(y, params=None):
     if 'room' in p:
         wet = fftconvolve(out, r_ir)[:len(dry)]
         # equal-loudness blend: match the reverb's level to what feeds it, then mix
+        wet *= np.sqrt(np.sum(out ** 2) / (np.sum(wet ** 2) + 1e-12))
+        out = (1 - p['room']['wet']) * out + p['room']['wet'] * wet
+    return trim(out.astype(np.float32), top_db=55, lead=0.05, tail=0.05)
+
+
+# =====================================================================
+# `muffled`: heard through a door or wall
+# =====================================================================
+# A steep low-pass (walls pass the lows and swallow consonants), a little low-mid "body" from the panel
+# resonating, and a short dark trace of the room on the other side. The clip is levelled afterwards like any
+# other, so it keeps a normal ear-weighted loudness; use `volume` to put it at a distance.
+# cutoff (Hz) / order: the low-pass (order 8 = -48 dB per octave); body: (Hz, dB, q) peaking boost or None;
+# room: as in INTERNAL, or None.
+MUFFLED = dict(cutoff=700, order=8, body=(250, 3.0, 0.8),
+               room=dict(decay=0.4, wet=0.12, tone=1200, predelay=8))
+
+
+def muffled(y, params=None):
+    p = params or MUFFLED
+    tail = len(room_ir(**p['room'])) if p.get('room') else 0
+    out = np.concatenate([y, np.zeros(tail, np.float32)]).astype(np.float64)
+    out = sosfilt(butter(p['order'], p['cutoff'], btype='lowpass', fs=SR, output='sos'), out)
+    if p.get('body'):
+        out = peaking(out, *p['body'])
+    if p.get('room'):
+        wet = fftconvolve(out, room_ir(**p['room']))[:len(out)]
         wet *= np.sqrt(np.sum(out ** 2) / (np.sum(wet ** 2) + 1e-12))
         out = (1 - p['room']['wet']) * out + p['room']['wet'] * wet
     return trim(out.astype(np.float32), top_db=55, lead=0.05, tail=0.05)

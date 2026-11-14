@@ -33,7 +33,7 @@ STYLES = {
 STYLE_LEVEL_DB = {'soft': -8.0, 'whisper': -12.0}    # ear-weighted, relative to a normal line
 # (soft used to borrow af_nicole's delivery, which made e141 sound like another person; 2026-11-12 it became
 # the speaker's own voice with breath mixed in. `breath` works on any style except whisper.)
-EFFECTS = ('internal',)                               # post effects that combine with any style
+EFFECTS = ('internal', 'muffled')                    # post effects that combine with any style (applied in order)
 
 # ---- word marks -> per-word edits
 # Stress is relative: the word's peak is lifted to `over` semitones above the peaks of the words around it
@@ -116,7 +116,7 @@ LENGTH_CAP = dict(inner=0.30, phrase_end=0.50, gap=0.15)
 # voiced on both sides and only over vowels/sonorants, are filled in.
 PITCH_BRIDGE = dict(ratio=0.7, win=12, max_len=24)
 
-# ---- question rise: Kokoro says "Julia?" like a statement (a peak on the stressed syllable, then a fall), so the
+# ---- question rise: Kokoro says "Mara?" like a statement (a peak on the stressed syllable, then a fall), so the
 # word before a "?" gets its own contour flattened and a rise laid on top: gradual at first, then sharp.
 # auto: semitones used on one-word questions when the line doesn't set `rise`; flatten: 0..1, how much of the
 # model's own movement on that word is removed; gradual: the share of the rise that is linear (the rest
@@ -216,7 +216,7 @@ WORD_RE = re.compile(r"[^\W\d_][\w'’-]*")
 def question_rises(settings, plain):
     """semitones of rise for each question ("?" run) in the line, in order. The line's `rise` applies to all.
     Otherwise: a one-word question gets QUESTION['auto']; a longer one QUESTION['auto_multi'], unless one of its
-    clauses starts with a wh-word ("So Julia, when was...?"), since those fall. (`rise` is not in DEFAULTS,
+    clauses starts with a wh-word ("So Mara, when was...?"), since those fall. (`rise` is not in DEFAULTS,
     so lines without it keep their cache keys.)"""
     out, start = [], 0
     for m in re.finditer(r'\?+', plain):

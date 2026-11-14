@@ -7,7 +7,7 @@
     [word](^1.5)   pitch +1.5 st     [word](^2>-1)  start 2 up, glide to 1 down   [word](^0>3>0)  any number of points
     [word](|)      0.2 s pause after [word](||) ... (|||||) 0.2 s per bar, up to 1 s   [word](|0.8)  exactly 0.8 s
     all combine: [word](++^2>0||)
-    [Harris](/hˈɛɹɪs/)               respelling in IPA (misaki's own syntax, passed through to it)
+    [Siobhan](/ʃɪvˈɔn/)               respelling in IPA (misaki's own syntax, passed through to it)
     [Dr.](=Doctor)                   say different words; the screen text stays "Dr." ([um](=) = silent)
 
 The bracketed text may hold several words; the mark applies to all of them.

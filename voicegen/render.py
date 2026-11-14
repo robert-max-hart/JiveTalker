@@ -1,7 +1,7 @@
 """Render a voice script into clips + manifest.json, reusing every clip whose inputs haven't changed.
 
 A clip's cache key covers everything that shapes its sound: the engine version, the voice file's contents,
-the resolved settings, the tuning constants the line actually uses (stress, `internal`, whisper/breath,
+the resolved settings, the tuning constants the line actually uses (stress, `internal`, `muffled`, whisper/breath,
 loudness), the text with its marks, and the seed. Files are named `<id>_<key10>.<ext>`, so a renumbered line
 finds its old clip by key and is renamed instead of re-rendered.
 
@@ -66,6 +66,8 @@ def tuning(job, settings):
         t['question'] = styles.QUESTION
     if 'internal' in settings['effects']:
         t['internal'] = dsp.INTERNAL
+    if 'muffled' in settings['effects']:
+        t['muffled'] = dsp.MUFFLED
     if settings['style'] == 'whisper' or settings.get('breath'):
         from .whisper_profile import VOWEL, FRIC
         t['whisper'] = [dsp.WHISPER, VOWEL, FRIC]

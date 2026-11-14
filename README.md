@@ -6,7 +6,7 @@ for thoughts), settings and word stress, and voicegen renders clips plus a manif
 
 ```
 pip install -e .                 # Python 3.10+, CPU is fine; pins kokoro==0.9.4
-voicegen preview "Close your [eyes](+~)..." --voice voices/harris.pt --style "trance 0.6" -o x.ogg
+voicegen preview "Close your [eyes](+~)..." --voice voices/lee.pt --style "trance 0.6" -o x.ogg
 voicegen check  voice_script.txt
 voicegen render voice_script.txt --out voice/ --dry-run
 voicegen render voice_script.txt --out voice/
@@ -20,7 +20,7 @@ A local page (127.0.0.1 only) for blending and tuning voice packs by ear. A pack
 the mixer sets each half on its own:
 
 - **Blend**: any stock or own voices with weights. Weights are divided by their sum, so a negative weight
-  pushes away from a voice (`julia 1.2, af_nicole -0.2`).
+  pushes away from a voice (`mara 1.2, af_nicole -0.2`).
 - **Adjust**: sliders along `gender`, `accent` and the eight principal axes of the 43 stock voices, in
   standard deviations. A mark on each slider shows where the current voice sits. Each slider is named for
   what it does to that half (e.g. timbre *size*, delivery *pitch*, *expression*, *tempo*; hover for details,
@@ -35,8 +35,8 @@ Loading a voice uses its `.recipe.json` if there is one; otherwise the mixer wor
 made from (exact for plain blends), or uses the file as it is.
 
 ```
-voicegen voice recipe voices/julia.pt --write        # recover a .pt's stock blend into julia.recipe.json
-voicegen voice build voices/julia.recipe.json -o j.pt  # rebuild a .pt from a recipe
+voicegen voice recipe voices/mara.pt --write        # recover a .pt's stock blend into mara.recipe.json
+voicegen voice build voices/mara.recipe.json -o m.pt  # rebuild a .pt from a recipe
 ```
 
 ## Notes
@@ -51,7 +51,7 @@ voicegen voice build voices/julia.recipe.json -o j.pt  # rebuild a .pt from a re
   (a folder with `config.json` and the `.pth`).
 
 Layout: `engine.py` (the model with duration/pitch editing), `styles.py` (styles and how directions
-resolve), `marks.py` (word marks), `dsp.py` (loudness, whisper, the `internal` echo), `script.py`
+resolve), `marks.py` (word marks), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
 (the voice script), `render.py` (caching and the manifest), `voicelab.py` (recipes and axes), `mixer.py` +
 `mixer.html` (the voice mixer), `cli.py`.
 

@@ -3,17 +3,17 @@
     # comment
     @voices ../voices                          folder for voice names (relative to this file)
     @cast narrator = base_narrator             speaker = voice (a name in @voices, a .pt path, or a stock voice)
-    @cast Doctor Harris = harris | ???         ... | aliases
-    @cast Julia (thought) = julia {internal}   ... {a default direction for this speaker}
+    @cast Doctor Lee = lee | ???               ... | aliases
+    @cast Mara (thought) = mara {internal}     ... {a default direction for this speaker}
     @defaults speed 0.95, human 1.0            direction for every line
-    @pronounce Julia = /ʤˈulʲə/                 say this word this way wherever it isn't marked otherwise
+    @pronounce Mara = /mˈɑɹə/                   say this word this way wherever it isn't marked otherwise
 
     == Chapter 1 ==                            a section heading (for reading only)
-    c1.e3    Julia (thought): But what if they do find something [wrong](+)?
-    c1.e9    !changed Julia {deep, take 2}: yes... yes...
+    c1.e3    Mara (thought): But what if [nobody](+) comes back?
+    c1.e9    !changed Mara {deep, take 2}: yes... yes...
 
     @ramp trance 0.2 -> 1.0                    deepen across the following lines of one speaker
-    c1.e170  Doctor Harris: Let everything else fade away...
+    c1.e170  Doctor Lee: Let everything else fade away...
     @end
 
 Each line: ID (any text without spaces, unique), optional !flags, speaker, optional {direction}, ':' and text.

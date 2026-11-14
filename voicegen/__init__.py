@@ -2,7 +2,7 @@
 
     from voicegen import Engine, write
     eng = Engine()
-    r = eng.render('Close your [eyes](+)...', 'voices/harris.pt', 'trance 0.6', seed=1)
+    r = eng.render('Close your [eyes](+)...', 'voices/lee.pt', 'trance 0.6', seed=1)
     write('line.ogg', r.audio)
 """
 __version__ = '0.1.0'

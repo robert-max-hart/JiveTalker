@@ -587,6 +587,8 @@ class Engine:
             for fx in s['effects']:
                 if fx == 'internal':
                     audio = dsp.internal(audio)
+                elif fx == 'muffled':
+                    audio = dsp.muffled(audio)
             audio = dsp.level(audio, s['level_db'])
         return Rendered(audio.astype(np.float32),
                         unknown_words=[t.text for t in tokens if t.unknown],

@@ -1,12 +1,12 @@
 """voicegen command line.
 
-    voicegen preview "Close your [eyes](+)..." --voice voices/harris.pt --style "trance 0.6" -o x.ogg
+    voicegen preview "Close your [eyes](+)..." --voice voices/lee.pt --style "trance 0.6" -o x.ogg
     voicegen preview --script voice_script.txt --line c1.e174 -o x.ogg
     voicegen check voice_script.txt
     voicegen render voice_script.txt --out voice/ [--dry-run] [--only "c1.e1*"] [--prune]
     voicegen mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
-    voicegen voice recipe voices/julia.pt          print (and with --write, save) the stock blend it is made of
-    voicegen voice build voices/julia.recipe.json  rebuild a .pt from its recipe
+    voicegen voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
+    voicegen voice build voices/mara.recipe.json   rebuild a .pt from its recipe
 """
 import argparse
 import sys
