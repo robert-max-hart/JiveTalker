@@ -8,7 +8,7 @@
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
     jivetalker voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
     jivetalker voice build voices/mara.recipe.json   rebuild a .pt from its recipe
-    jivetalker sing song.abc --voice af_bella -o song.wav [--transpose -12] [--guide]   (experimental)
+    jivetalker sing song.abc|song.musicxml --voice af_bella -o song.wav [--check] [--json r.json]   (experimental)
 """
 import argparse
 import sys
@@ -59,7 +59,12 @@ def cmd_sing(a):
     import numpy as np
     from . import __version__, sing
     from .engine import Engine, write
-    song = sing.parse_abc(Path(a.song).read_text(encoding='utf-8'), transpose=a.transpose)
+    song = sing.load(a.song, transpose=a.transpose, part=a.part, voice=a.voice_number, verse=a.verse)
+    if Path(a.song).suffix.lower() in ('.musicxml', '.xml', '.mxl'):
+        parts = sing.musicxml_parts(Path(a.song).read_bytes())
+        if len(parts) > 1 or any(len(v) > 1 for _, _, v in parts):
+            print('parts: ' + '; '.join(f'{i + 1} = {pid} {name} (voices with lyrics: {", ".join(v) or "none"})'
+                                        for i, (pid, name, v) in enumerate(parts)))
     sung = [n for n in song.notes if n.midi is not None]
     lo, hi = min(n.hz for n in sung), max(n.hz for n in sung)
     print(f'{len(sung)} notes, {lo:.0f}-{hi:.0f} Hz, {sum(1 for x in song.lyrics if x)} syllables')
@@ -306,7 +311,12 @@ def main(argv=None):
     vo.add_argument('--force', action='store_true', help='replace an existing output file')
     vo.set_defaults(func=cmd_voice)
     sg = sub.add_parser('sing', help='sing a melody (ABC notation with a w: lyric line); experimental')
-    sg.add_argument('song', help='an .abc file: see jivetalker/sing.py for the subset understood')
+    sg.add_argument('song', help='an .abc file (see jivetalker/sing.py for the subset understood), or a MusicXML '
+                                 'score (.musicxml, .xml, .mxl) as notation programs export it')
+    sg.add_argument('--part', help='MusicXML: the part to sing (number, id or name; default: the first with lyrics)')
+    sg.add_argument('--voice-number', dest='voice_number',
+                    help='MusicXML: the voice within the part (default: the first with lyrics)')
+    sg.add_argument('--verse', type=int, default=1, help='MusicXML: which lyric line (default 1)')
     sg.add_argument('--voice', required=True, help='.pt file or a stock voice')
     sg.add_argument('--lang', help='the lyric\'s language (default en)')
     sg.add_argument('--transpose', type=int, default=0, help='semitones (e.g. -12 for a low voice)')

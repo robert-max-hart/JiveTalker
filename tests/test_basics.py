@@ -240,6 +240,30 @@ class Singing(unittest.TestCase):
         self.assertEqual([(s.onset, s.nucleus, s.coda, s.notes) for s in syls],
                          [('twˈ', 'ɪ', 'ŋ', [0]), ('k', 'ᵊ', 'l', [1]), ('ð', 'ə', '', [2]), ('fˈ', 'I', 'əɹ', [3, 4])])
 
+    def test_musicxml(self):
+        import io
+        import zipfile
+        from jivetalker import sing
+        data = (Path(__file__).parent / 'score.musicxml').read_bytes()
+        song = sing.parse_musicxml(data)          # the Voice part (the piano has no lyrics), voice 1, verse 1
+        sung = [n for n in song.notes if n.midi is not None]
+        self.assertEqual([n.midi for n in sung], [67, 69, 71, 72, 66, 67])            # chord: first note only
+        self.assertEqual([round(n.start, 3) for n in sung], [0.0, 0.667, 1.333, 1.667, 2.0, 4.0])
+        self.assertEqual(round(sung[4].length, 3), 1.333)                              # tied over the bar
+        self.assertEqual(round(sung[5].length, 3), 2.0)                                # tempo 90 -> 60
+        self.assertEqual(song.words, ['Morning', 'comes', '/sˈO/', 'light.'])
+        self.assertEqual(song.lyrics[:4], [('Mor', 0), ('ning', 0), ('comes', 1), None])   # melisma
+        self.assertEqual(sing.parse_musicxml(data, verse=2).words, ['Night', 'falls'])
+        self.assertEqual(sing.parse_musicxml(data, voice=2).words, ['ooh'])
+        with self.assertRaises(ValueError):
+            sing.parse_musicxml(data, part=1)                                          # no lyrics there
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w') as z:
+            z.writestr('META-INF/container.xml', '<container><rootfiles><rootfile full-path="s.xml"/></rootfiles>'
+                                                 '</container>')
+            z.writestr('s.xml', data)
+        self.assertEqual(sing.parse_musicxml(buf.getvalue()).words, song.words)
+
     def test_psola_lands_on_pitch(self):
         import numpy as np
         from jivetalker import sing

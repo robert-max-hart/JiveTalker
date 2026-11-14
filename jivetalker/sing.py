@@ -1,4 +1,9 @@
-"""Singing (experimental): a melody in ABC notation with a lyric line -> a sung line.
+"""Singing (experimental): a melody in ABC notation with a lyric line, or a MusicXML score -> a sung line.
+
+MusicXML (.musicxml, .xml, or compressed .mxl: what MuseScore, Finale, Sibelius, Dorico export) is read with
+load(): one part and one voice (the first with lyrics, unless chosen), its notes, rests, ties and tempo marks,
+and one verse of its lyric syllables. Of a chord only the first written note is sung (keep the melody in a
+voice of its own); grace notes are skipped. Lyric syllables can be /phonemes/ as below.
 
     X:1
     L:1/4                 default note length
@@ -209,6 +214,159 @@ def parse_lyrics(text, n_notes):
         raise ValueError(f'the lyric has {len(out)} syllables (and holds) for {n_notes} notes')
     out += [None] * (n_notes - len(out))        # a lyric shorter than the tune: the last syllable is held
     return out, words, written
+
+
+# ---------------------------------------------------------------------------------------------- MusicXML
+STEPS = dict(C=0, D=2, E=4, F=5, G=7, A=9, B=11)
+
+
+def load(path, transpose=0, part=None, voice=None, verse=1):
+    """a song file -> Song: ABC (.abc) or MusicXML (.musicxml, .xml, .mxl)"""
+    path = Path(path)
+    if path.suffix.lower() in ('.musicxml', '.xml', '.mxl'):
+        return parse_musicxml(path.read_bytes(), transpose, part, voice, verse)
+    if part is not None or voice is not None or verse != 1:
+        raise ValueError('--part, --voice and --verse are for MusicXML scores')
+    return parse_abc(path.read_text(encoding='utf-8'), transpose)
+
+
+def _musicxml_root(data):
+    import io
+    import xml.etree.ElementTree as ET
+    import zipfile
+    if data[:2] == b'PK':                       # .mxl: a zip; META-INF/container.xml names the score
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            name = None
+            try:
+                c = ET.fromstring(z.read('META-INF/container.xml'))
+                name = next((e.get('full-path') for e in c.iter() if e.tag.endswith('rootfile')), None)
+            except KeyError:
+                pass
+            name = name or next(n for n in z.namelist() if not n.startswith('META-INF') and n.endswith('ml'))
+            data = z.read(name)
+    root = ET.fromstring(data)
+    for e in root.iter():                       # drop any namespace
+        if '}' in e.tag:
+            e.tag = e.tag.split('}', 1)[1]
+    if root.tag == 'score-timewise':
+        raise ValueError('this MusicXML is "timewise"; export it as a normal (partwise) MusicXML file')
+    if root.tag != 'score-partwise':
+        raise ValueError('not a MusicXML score')
+    return root
+
+
+def musicxml_parts(data):
+    """[(id, name, voices with lyrics)] of a MusicXML score, to choose --part / --voice"""
+    root = _musicxml_root(data)
+    names = {sp.get('id'): (sp.findtext('part-name') or '').strip() for sp in root.iter('score-part')}
+    out = []
+    for p in root.findall('part'):
+        voices = sorted({n.findtext('voice') or '1' for n in p.iter('note') if n.find('lyric') is not None})
+        out.append((p.get('id'), names.get(p.get('id'), ''), voices))
+    return out
+
+
+def parse_musicxml(data, transpose=0, part=None, voice=None, verse=1):
+    """MusicXML bytes -> Song. part: id, name or 1-based number (default: the first part with lyrics);
+    voice: the voice number (default: the first with lyrics in that part); verse: the lyric line (number)."""
+    root = _musicxml_root(data)
+    parts = root.findall('part')
+    info = musicxml_parts(data)
+    if not parts:
+        raise ValueError('the score has no parts')
+    if part is None:
+        k = next((i for i, (_, _, vs) in enumerate(info) if vs), 0)
+    else:
+        sel = str(part)
+        k = next((i for i, (pid, name, _) in enumerate(info) if sel in (pid, name) or sel == str(i + 1)), None)
+        if k is None:
+            raise ValueError(f'no part "{part}": the parts are '
+                             + ', '.join(f'{i + 1} ({pid} {name})'.strip() for i, (pid, name, _) in enumerate(info)))
+    p = parts[k]
+    if voice is None:
+        voice = info[k][2][0] if info[k][2] else (p.findtext('measure/note/voice') or '1')
+    voice = str(voice)
+    numbers = [ly.get('number') or '1' for n in p.iter('note') if (n.findtext('voice') or '1') == voice
+               for ly in n.findall('lyric')]
+    if str(verse) not in numbers and verse == 1 and numbers:
+        verse = numbers[0]                          # lyric lines numbered otherwise ("verse1", "2"...): the first
+
+    divisions, cur, measure_q = 1.0, 0.0, 0.0       # cursor in divisions inside the measure; measure start in quarters
+    tempo = [(0.0, 120.0)]                          # (quarter position, quarters per minute)
+    events = []                                     # (start q, length q, midi or None, lyric, tie start, tie stop)
+    for m in p.findall('measure'):
+        cur, longest = 0.0, 0.0
+        for e in m:
+            if e.tag == 'attributes' and e.findtext('divisions'):
+                divisions = float(e.findtext('divisions'))
+            elif e.tag in ('direction', 'sound'):
+                snd = e if e.tag == 'sound' else e.find('sound')
+                if snd is not None and snd.get('tempo'):
+                    tempo.append((measure_q + cur / divisions, float(snd.get('tempo'))))
+            elif e.tag == 'backup':
+                cur -= float(e.findtext('duration') or 0)
+            elif e.tag == 'forward':
+                cur += float(e.findtext('duration') or 0)
+            elif e.tag == 'note':
+                if e.find('grace') is not None or e.find('cue') is not None:
+                    continue
+                dur = float(e.findtext('duration') or 0)
+                if e.find('chord') is not None:     # a further note of a chord: same time, not sung
+                    continue
+                if (e.findtext('voice') or '1') == voice:
+                    midi = None
+                    if e.find('rest') is None and e.find('pitch') is not None:
+                        pt = e.find('pitch')
+                        midi = (12 * (int(pt.findtext('octave')) + 1) + STEPS[pt.findtext('step').strip()]
+                                + int(round(float(pt.findtext('alter') or 0))) + transpose)
+                    lyr = None
+                    for ly in e.findall('lyric'):
+                        if (ly.get('number') or '1') == str(verse) and ly.findtext('text') is not None:
+                            lyr = (''.join((t.text or '') for t in ly.findall('text')).strip(),
+                                   (ly.findtext('syllabic') or 'single').strip())
+                    ties = {t.get('type') for t in e.findall('tie')}
+                    events.append((measure_q + cur / divisions, dur / divisions, midi, lyr,
+                                   'start' in ties, 'stop' in ties))
+                cur += dur
+            longest = max(longest, cur)
+        measure_q += longest / divisions
+
+    tempo.sort(key=lambda x: x[0])                # stable: at the same place, the mark written later wins
+    def seconds(q):                                 # quarter position -> seconds, through the tempo changes
+        t, last_q, bpm = 0.0, 0.0, tempo[0][1]
+        for tq, tb in tempo[1:]:
+            if tq >= q:
+                break
+            t += (tq - last_q) * 60.0 / bpm; last_q, bpm = tq, tb
+        return t + (q - last_q) * 60.0 / bpm
+
+    notes, lyric_of, tie_open = [], [], False
+    for q, ln, midi, lyr, t_start, t_stop in events:
+        if midi is not None and t_stop and tie_open and notes and notes[-1].midi == midi:
+            end = seconds(q + ln)
+            notes[-1].length = end - notes[-1].start
+            tie_open = t_start
+            continue
+        start = seconds(q)
+        notes.append(Note(midi, start, seconds(q + ln) - start))
+        if midi is not None:
+            lyric_of.append(lyr)
+        tie_open = t_start and midi is not None
+    if not any(lyric_of):
+        raise ValueError(f'part {info[k][0]} voice {voice} has no lyrics (verse {verse})')
+    out, words, written, open_word = [], [], [], False
+    for lyr in lyric_of:
+        if lyr is None or not lyr[0]:
+            out.append(None); continue
+        text, syllabic = lyr
+        if syllabic in ('single', 'begin') or not open_word:
+            words.append(''); written.append([])
+        words[-1] += text
+        written[-1].append(text)
+        out.append((text, len(words) - 1))
+        open_word = syllabic in ('begin', 'middle')
+    title = (root.findtext('work/work-title') or root.findtext('movement-title') or '').strip()
+    return Song(notes, out, words, title, written)
 
 
 # ---------------------------------------------------------------------------------------------- syllables

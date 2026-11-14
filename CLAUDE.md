@@ -41,7 +41,8 @@ Kokoro TTS voice-line generator with markup. Read README.md (install, layout, mi
 
 ## Running
 
-- **Singing, step by step (for agents):** write the ABC (`sing.py`'s docstring has the subset); run
+- **Singing, step by step (for agents):** take a MusicXML score (`--part`/`--voice-number`/`--verse` pick the
+  line) or write ABC (`sing.py`'s docstring has the subset); run
   `jivetalker sing x.abc --voice V --dry-run --json plan.json` (instant, no model) to see which syllable lands
   on which note and fix the lyric until it matches; then render with `--json report.json` and read
   `summary` (re-render or rewrite syllables as `/phonemes/` for `bad_notes`). Add `-v` (or read `phrases` in
