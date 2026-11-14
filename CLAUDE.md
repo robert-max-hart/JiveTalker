@@ -37,7 +37,9 @@ Kokoro TTS voice-line generator with markup. Read README.md (install, layout, mi
   per note `cents`, `onset_ms`); keep 0 notes off by more than 50 cents on the test songs after any change.
   How it *sounds* is still the user's call. Kokoro can't sing above ~300 Hz: notes outside a voice's band
   (`probe_range`, cached per voice; bump `PROBE_VERSION` if singing changes move the bands) are shifted with
-  PSOLA. The constants in `sing.py` say which were measured and which are guesses.
+  PSOLA. The constants in `sing.py` say which were measured and which are guesses. Sung script lines
+  (`{sing file}`) key on the score's contents and every constant in `sing.py`; bump `SING_VERSION` for a sound
+  change inside its code. Spoken lines' keys must not move (`GOLDEN_KEY`).
 
 ## Running
 

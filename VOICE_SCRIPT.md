@@ -89,6 +89,7 @@ A direction is a comma-separated list: at most one **style**, any **effects**, a
 | `rise 5` | semitones of question rise on the word before each `?`: level at first, then sharp. Kokoro says questions like statements, so they rise automatically: one-word questions ("Mara?", "Twenty?") by 5, longer ones by 3, except when a clause starts with who/what/when/where/why/how/which (those fall). Setting `rise` applies it to every question in the line; `rise 0` turns it off | auto |
 | `breath 0.5` | mixes the speaker's own whisper into the voice: 0 = none, 1 = all whisper. Not for `whisper` itself | 0 (`soft`: 0.15) |
 | `lang ja` | the language the line is in: `en` or `ja` (see [Languages](#languages)). Can't be ramped | `en` |
+| `sing songs/x.musicxml` | the line is sung from this score (see [Sung lines](#sung-lines)). Can't be ramped | |
 
 Directions combine in this order: `@defaults`, then the speaker's `@cast` direction, then a ramp, then the
 line's own. A later style replaces an earlier one, settings replace earlier settings (except `pitch` and
@@ -164,6 +165,24 @@ tuned by ear**.
   `@pronounce ミラ` also changes ミラー. Mark single occurrences when that matters.
 - Unlike stock Kokoro, `、` and `。` and the 「」 quotes are spoken as pauses: Kokoro's Japanese phonemizer
   drops them, which leaves no pause between sentences.
+
+## Sung lines
+
+```
+s.2   Mara {sing songs/lullaby.musicxml}: Sleep now, little one
+s.3   Lee {sing songs/round.abc verse=2 transpose=-12, internal}: Night falls.
+```
+
+`sing <file>` in a line's direction makes the line sung: the melody, rhythm and lyric come from the score (a
+MusicXML file as notation programs export it, or ABC; the path is relative to the script). The line's text is
+only what is shown on screen. Options, written after the file: `part=` and `voice=` (which line of a score with
+several), `verse=` (which lyric line), `transpose=` (semitones), `band=` (`auto`, `off`, or MIDI notes such as
+`50-62`: the notes the voice sings itself; outside them the pitch is shifted). Effects (`internal`, `muffled`)
+and `volume` apply as to speech, `lang ja` sings Japanese lyrics; the other settings and styles don't apply.
+
+The clip starts 0.3 s before the song's first beat. Changing the score re-renders only the lines that sing it.
+The first sung line of a voice measures its singing range (about a minute, then cached). `jivetalker sing`
+renders a score on its own, with a pitch and timing report (README, Singing).
 
 ## Commands
 

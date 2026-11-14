@@ -514,6 +514,14 @@ class Engine:
         return np.concatenate(audios), np.concatenate(voiced)
 
     # ------------------------------------------------------------------ public
+    def render_job(self, job):
+        """a script Job -> Rendered: spoken, or sung when its direction has `sing <song file>`"""
+        d = job.direction if isinstance(job.direction, styles.Direction) else styles.parse_direction(job.direction)
+        if 'sing' in styles.resolve(d):
+            from .sing import render_line
+            return render_line(self, job)
+        return self.render(job.text, job.voice, job.direction, seed=job.seed)
+
     def render(self, text, voice, direction='', seed=0, finish=True):
         """
         text      : the line, with optional word marks (see marks.py)

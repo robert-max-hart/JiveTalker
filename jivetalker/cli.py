@@ -23,6 +23,7 @@ def report(errors, label):
 
 def cmd_preview(a):
     from .engine import Engine, write
+    job = None
     if a.script:
         from .script import Script
         jobs, errors = Script.load(a.script).jobs(a.voices_dir)
@@ -44,7 +45,7 @@ def cmd_preview(a):
     t0 = time.time()
     eng = Engine(model_dir=a.model_dir)
     t1 = time.time()
-    r = eng.render(text, voice, direction, seed=seed)
+    r = eng.render_job(job) if a.script else eng.render(text, voice, direction, seed=seed)
     out = write(a.output, r.audio, a.format)
     print(f'{out}: {len(r.audio) / 24000:.1f} s  (model load {t1 - t0:.0f} s, render {time.time() - t1:.1f} s)')
     if a.verbose:
@@ -171,7 +172,7 @@ def cmd_check(a):
     print(f'{a.script}: {len(sc.lines)} lines, {len(jobs)} ready')
     for who, n in Counter(j.speaker for j in jobs).most_common():
         print(f'  {n:5}  {who}')
-    styled = Counter(j.direction.style or 'normal' for j in jobs)
+    styled = Counter('sung' if j.song else (j.direction.style or 'normal') for j in jobs)
     print('  styles: ' + ', '.join(f'{k} {v}' for k, v in styled.most_common()))
     if flagged:
         print(f'{len(flagged)} flagged for review:')

@@ -255,7 +255,7 @@ class ScriptDoc:
             elif name == 'rise':
                 value = srcs[-1][1] if srcs else None
             elif name in styles.TEXT_SETTINGS:
-                value = srcs[-1][1] if srcs else languages.DEFAULT
+                value = srcs[-1][1] if srcs else (languages.DEFAULT if name == 'lang' else None)
             else:
                 value = res.get(k_eng, styles.DEFAULTS.get(k_eng, 0.0))
             if srcs:
@@ -293,6 +293,10 @@ class LockedEngine:
     def render(self, *a, **k):
         with self._lock:
             return self._eng.render(*a, **k)
+
+    def render_job(self, job):
+        with self._lock:
+            return self._eng.render_job(job)
 
     def __getattr__(self, name):
         return getattr(self._eng, name)
@@ -333,7 +337,7 @@ class Toolkit:
         job = self._job(q['id'])
         with self.lock:
             t = time.time()
-            r = self.eng.render(job.text, job.voice, job.direction, seed=job.seed)
+            r = self.eng.render_job(job)
             took = time.time() - t
         import soundfile as sf
         buf = io.BytesIO()

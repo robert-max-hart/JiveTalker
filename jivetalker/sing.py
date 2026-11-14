@@ -64,6 +64,8 @@ OPEN_RETURN = 3             # frames at the end of a held vowel that blend back 
 # roughly an octave and a half around their speaking pitch, and not above ~300 Hz for any voice (af_bella F3-D4,
 # am_adam C2-E4, af_nicole D3-A3); above it the decoder drops an octave or the voice turns to noise.
 CEILING_HZ = 300.0
+SING_VERSION = 1            # in sung lines' cache keys with every constant here: bump it when the code changes
+                            # the sound in a way no constant shows
 PROBE = dict(low=36, high=76, words=('far', 'see'), length=0.8, cents=50, voiced=0.7)   # C2..E5
 BAND_MARGIN = (2, 5)        # semitones kept inside the measured band (bottom, top): sustained test notes hold
                             # higher than notes inside a phrase do (am_adam's G4 failed in a line; D4 held)
@@ -912,6 +914,32 @@ NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 
 def note_name(midi):
     return f'{NAMES[midi % 12]}{midi // 12 - 1}'
+
+
+def tuning():
+    """the constants a sung line's sound depends on (for its cache key)"""
+    return {k: v for k, v in sorted(globals().items())
+            if k.isupper() and isinstance(v, (int, float, str, tuple, dict, bool, frozenset))
+            and not k.startswith(('NOTE_', 'MAJOR_', 'MINOR_'))}
+
+
+def render_line(eng, job):
+    """a sung script line (its direction has `sing <file> [options]`) -> engine.Rendered. The clip starts
+    LEAD_IN seconds before the song's first beat; effects and volume apply as to speech, other settings don't."""
+    from . import styles
+    from .engine import Rendered
+    s = styles.resolve(job.direction)
+    path, opts = styles.parse_sing(s['sing'])
+    song = load(job.song or path, transpose=int(opts.get('transpose', 0)), part=opts.get('part'),
+                voice=opts.get('voice'), verse=int(opts.get('verse', 1)))
+    b = opts.get('band', 'auto')
+    band = (safe_band(probe_range(eng, job.voice, log=None)) if b == 'auto' else None if b == 'off'
+            else tuple(int(x) for x in b.split('-')))
+    audio, phrases = sing(eng, song, job.voice, lang=s.get('lang'), seed=job.seed % 2 ** 63, band=band)
+    for fx in s['effects']:
+        audio = dsp.internal(audio) if fx == 'internal' else dsp.muffled(audio) if fx == 'muffled' else audio
+    audio = dsp.level(audio, s['level_db'])
+    return Rendered(np.asarray(audio, np.float32), phonemes=' | '.join(phrases))
 
 
 def guide(song, sr=dsp.SR):

@@ -50,6 +50,15 @@ def tuning(job, settings, lang=None):
     lang: the line's language (default English)"""
     from . import dsp, engine
     L = languages.get(lang if lang is not None else settings.get('lang'))
+    if 'sing' in settings:                      # a sung line: the song file and the singing constants
+        from . import sing
+        song = getattr(job, 'song', None)
+        t = {'level': [dsp.LEVEL_TARGET, dsp.PEAK_LIMIT], 'sing': sing.tuning(),
+             'song': file_hash(song) if song else None}
+        for fx in ('internal', 'muffled'):
+            if fx in settings['effects']:
+                t[fx] = dsp.INTERNAL if fx == 'internal' else dsp.MUFFLED
+        return t
     t = {'level': [dsp.LEVEL_TARGET, dsp.PEAK_LIMIT], 'voiced': engine.VOICED_HZ,
          'timing': [styles.PAUSES, styles.PAUSE_HUMAN, styles.LENGTH_CAP, styles.PITCH_BRIDGE, styles.QUIET_ENERGY, styles.QUIET_EASE]}
     mt = marks_mod.parse(job.text, L)
@@ -87,6 +96,15 @@ def cache_key(job):
 
 def estimate_seconds(job):
     s = styles.resolve(job.direction)
+    if 'sing' in s and getattr(job, 'song', None):
+        from . import sing
+        try:
+            path, opts = styles.parse_sing(s['sing'])
+            song = sing.load(job.song, part=opts.get('part'), voice=opts.get('voice'),
+                             verse=int(opts.get('verse', 1)))
+            return max((n.start + n.length for n in song.notes), default=0.0) * 2.5     # singing renders slower
+        except Exception:
+            pass
     L = languages.get(s.get('lang'))
     plain = marks_mod.parse(job.text, L).plain
     return len(plain) / L.CHARS_PER_SECOND / max(0.3, s['speed']) * (1 + 0.15 * (s['pause'] - 1))
@@ -217,7 +235,7 @@ def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_di
         try:
             for n, (j, key, _, _) in enumerate(todo, 1):
                 t1 = time.time()
-                r = eng.render(j.text, j.voice, j.direction, seed=j.seed)
+                r = eng.render_job(j)
                 path = write(out / clip_name(j.id, key, fmt), r.audio, fmt, warn=log)
                 secs = len(r.audio) / 24000
                 done_audio += secs

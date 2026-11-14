@@ -272,6 +272,29 @@ class Singing(unittest.TestCase):
             z.writestr('s.xml', data)
         self.assertEqual(sing.parse_musicxml(buf.getvalue()).words, song.words)
 
+    def test_sung_script_lines(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / 'songs').mkdir()
+            (d / 'songs' / 'tune.abc').write_text('L:1/4\nK:C\nC D E2\nw: la la la\n', encoding='utf-8')
+            sc = d / 'voice_script.txt'
+            sc.write_text('@cast Mara = af_bella\n'
+                          'a.1 Mara: spoken\n'
+                          'a.2 Mara {sing songs/tune.abc transpose=-12, internal}: la la la\n'
+                          'a.3 Mara {sing songs/missing.abc}: x\n'
+                          'a.4 Mara {sing songs/tune.abc verse=x}: x\n', encoding='utf-8')
+            jobs, errors = Script.load(sc).jobs()
+            self.assertEqual([j.id for j in jobs], ['a.1', 'a.2'])
+            self.assertEqual(sorted(n for n, _ in errors), [4, 5])                    # missing file, bad option
+            sung = jobs[1]
+            self.assertEqual(Path(sung.song).name, 'tune.abc')
+            self.assertEqual(styles.resolve(sung.direction)['sing'], 'songs/tune.abc transpose=-12')
+            k1 = render.cache_key(sung)
+            (d / 'songs' / 'tune.abc').write_text('L:1/4\nK:C\nC D F2\nw: la la la\n', encoding='utf-8')
+            self.assertNotEqual(render.cache_key(sung), k1)                           # the score is in the key
+        with self.assertRaises(ValueError):
+            styles.parse_direction('sing songs/tune.mp3')
+
     def test_psola_lands_on_pitch(self):
         import numpy as np
         from jivetalker import sing

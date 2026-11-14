@@ -80,6 +80,7 @@ class Job:
     text: str
     seed: int
     lineno: int
+    song: str = None        # a sung line's song file (absolute), from its `sing` direction
 
 
 class Script:
@@ -260,11 +261,25 @@ class Script:
                 styles.resolve(d)
             except ValueError as e:
                 errors.append((ln.lineno, str(e))); continue
+            song = None
+            res = styles.resolve(d)
+            if 'sing' in res:                   # a sung line: its song file, relative to the script
+                path, opts = styles.parse_sing(res['sing'])
+                song = (self.path.parent if self.path else Path('.')) / path
+                if not song.exists():
+                    errors.append((ln.lineno, f'sing: song file not found: {song}')); continue
+                try:
+                    from . import sing
+                    sing.load(song, transpose=int(opts.get('transpose', 0)), part=opts.get('part'),
+                              voice=opts.get('voice'), verse=int(opts.get('verse', 1)))
+                except Exception as e:          # a bad score: report it with the line
+                    errors.append((ln.lineno, f'sing {path}: {e}')); continue
+                song = str(song.resolve())
             key = (who, mt.plain)
             occ = occurrences.get(key, 0); occurrences[key] = occ + 1
             jobs.append(Job(ln.id, who, self.voice_path(self.cast[who].voice, voices_dir), d,
                             marks_mod.apply_pronounce(ln.text, self.pronounce),
-                            make_seed(who, mt.plain, occ), ln.lineno))
+                            make_seed(who, mt.plain, occ), ln.lineno, song))
         return jobs, errors
 
     # ------------------------------------------------------------------ writing

@@ -5,6 +5,7 @@ Resolution order: DEFAULTS -> the style -> the line's own settings.
   (so `{deep, speed 0.9}` = 0.9 x 0.75).
 - `pitch` and `volume` in a direction add to the style's; every other setting replaces the style's value.
 """
+import re
 from dataclasses import dataclass, field
 
 from . import lang as languages
@@ -110,9 +111,34 @@ QUESTION = _en.QUESTION     # the English tuning, kept for older code
 
 SETTING_NAMES = {'speed': 'speed', 'pitch': 'pitch', 'range': 'range_', 'drift': 'drift', 'pause': 'pause',
                  'floor': 'floor', 'human': 'human', 'volume': 'volume', 'take': 'take', 'rise': 'rise',
-                 'breath': 'breath', 'lang': 'lang'}
+                 'breath': 'breath', 'lang': 'lang', 'sing': 'sing'}
 ADDITIVE = ('pitch', 'volume')
-TEXT_SETTINGS = ('lang',)   # settings that hold a word, not a number (and can't be ramped)
+TEXT_SETTINGS = ('lang', 'sing')    # settings that hold words, not a number (and can't be ramped)
+SONG_FILES = ('.abc', '.musicxml', '.xml', '.mxl')
+SING_OPTIONS = ('part', 'voice', 'verse', 'transpose', 'band')
+
+
+def parse_sing(value):
+    """'songs/x.musicxml verse=2 transpose=-12' -> (path, {option: value}); see SING_OPTIONS"""
+    words = (value or '').split()
+    if not words:
+        raise ValueError('"sing" needs a song file, e.g. "sing songs/lullaby.musicxml"')
+    path, opts = words[0], {}
+    if not path.lower().endswith(SONG_FILES):
+        raise ValueError(f'sing: "{path}" is not a song file ({", ".join(SONG_FILES)})')
+    for w in words[1:]:
+        k, eq, v = w.partition('=')
+        if not eq or k not in SING_OPTIONS or not v:
+            raise ValueError(f'sing: "{w}" is not an option (' + ', '.join(f'{o}=' for o in SING_OPTIONS) + ')')
+        if k in ('verse', 'transpose'):
+            try:
+                int(v)
+            except ValueError:
+                raise ValueError(f'sing: {k}= takes a whole number') from None
+        if k == 'band' and v not in ('auto', 'off') and not re.match(r'^\d+-\d+$', v):
+            raise ValueError('sing: band= is auto, off, or two MIDI notes such as 50-62')
+        opts[k] = v
+    return path, opts
 
 
 @dataclass
@@ -151,6 +177,10 @@ def parse_direction(text):
         elif name in EFFECTS:
             d.effects.append(name)
         elif name in SETTING_NAMES:
+            if name == 'sing':
+                path, opts = parse_sing(' '.join(words[1:]))
+                d.settings[name] = ' '.join([path] + [f'{k}={opts[k]}' for k in SING_OPTIONS if k in opts])
+                continue
             if name in TEXT_SETTINGS:
                 if len(words) != 2:
                     raise ValueError(f'"{name}" needs one value: {", ".join(languages.codes())}')
