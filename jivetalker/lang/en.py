@@ -16,6 +16,7 @@ class English(Language):
     # vowels (misaki's capitals are diphthongs), voiced sonorants, the flap, and stress/length marks
     VOWELS = frozenset('aeiouæɑɐɒɔəɚɛɜɪʊʌᵊᵻAIOWY')
     SONORANT = VOWELS | frozenset('lɹwjmnŋɫTˈˌː')
+    WEAK_NUCLEI = frozenset('əᵊɪᵻ')     # reduced vowels ("fire" = fI + əɹ on one note)
 
     # ---- stress marks -> per-word edits
     # Stress is relative: the word's peak is lifted to `over` semitones above the peaks of the words around it

@@ -113,6 +113,7 @@ jivetalker sing song.abc --voice af_bella -o song.wav
 The melody comes from a MusicXML score (`.musicxml`, `.xml` or compressed `.mxl`, as MuseScore, Finale,
 Sibelius or Dorico export it: write the tune with its lyric syllables there), or from ABC notation with a `w:`
 lyric line (`-` splits syllables, `_` holds one over the next note); `jivetalker/sing.py` lists what is read.
+Japanese lyrics sing with `--lang ja` (one kana per note; ん and long vowels can take notes of their own).
 For scores with several parts, voices or verses: `--part`, `--voice-number`, `--verse` (the choices are listed
 when there are any). Each voice sings by itself only over a band of notes
 (Kokoro's decoder was trained on speech and can't go much above middle C); the band is measured once per voice

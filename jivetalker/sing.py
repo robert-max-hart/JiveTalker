@@ -21,6 +21,10 @@ prints): /fˈIəɹ/ for a whole word, or Twin/twˈɪŋ/-kle for one syllable: wi
 the word is phonemized whole from its spelling (so "kle" is said as in "twinkle") and only that syllable is
 replaced. Without spellings, a word's other syllables are phonemized one by one.
 
+Japanese (--lang ja, or lang='ja'): one kana per note, hyphens between the kana of a word (ゆ-め の な-か);
+ん and a long vowel (そ-う, ゆ-う) are beats of their own and can take their own notes; with fewer notes than
+beats they join the beat before them.
+
 Pitch beyond the voice: Kokoro's decoder follows a pitch only over a band around the voice's speaking pitch
 (probe_range measures it per voice, and caches it). Notes outside the band are sung at the band's edge and then
 moved to their real pitch with PSOLA (psola()), which keeps the vowels' sound but can sound synthetic.
@@ -387,19 +391,24 @@ def split_word(ph, n, L):
     Too many vowels: of the closest pair (reduced vowels first), the weaker one is sung as part of the other's
     syllable. Too few: the caller holds the last one."""
     stress = set('ˈˌ')
-    nuclei = []                                 # [start, end) of each vowel (with a length mark after it)
-    i = 0
+    mods = stress | set('ʲʰ')                   # marks that belong to the consonant before them (kʲ)
+    nuclei = []                                 # [start, end) of each beat: a vowel (with its length mark), or
+    i = 0                                       # in some languages a moraic nasal or a length mark of its own
     while i < len(ph):
         if ph[i] in L.VOWELS:
             j = i + 1
-            while j < len(ph) and ph[j] == 'ː':
+            while j < len(ph) and ph[j] == 'ː' and not L.LONG_MORA:
                 j += 1
             nuclei.append([i, j]); i = j
+        elif L.LONG_MORA and ph[i] == 'ː' and nuclei and nuclei[-1][1] == i:
+            nuclei.append([i, i + 1]); i += 1
+        elif ph[i] in L.MORA_NASALS and (i + 1 == len(ph) or ph[i + 1] not in L.VOWELS | set('ʲj')):
+            nuclei.append([i, i + 1]); i += 1
         else:
             i += 1
     if not nuclei:
         return [('', ph, '')]
-    reduced = set('əᵊɪᵻ')
+    reduced = L.WEAK_NUCLEI
     while len(nuclei) > max(n, 1):
         def cost(k):
             gap = nuclei[k + 1][0] - nuclei[k][1]
@@ -417,12 +426,12 @@ def split_word(ph, n, L):
             onset = ph[:a]
         else:
             cl = ph[prev_end:a]
-            core = cl.replace('ˈ', '').replace('ˌ', '')
+            core = ''.join(c for c in cl if c not in mods)
             take = 2 if core[-2:] in ONSETS2 and len(core) >= 2 else (1 if core else 0)
             cut = len(cl)
             while take and cut > 0:
                 cut -= 1
-                if cl[cut] not in stress:
+                if cl[cut] not in mods:
                     take -= 1
             while cut > 0 and cl[cut - 1] in stress:    # a stress mark stays with its syllable
                 cut -= 1

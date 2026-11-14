@@ -43,6 +43,10 @@ class Language:
     VOWELS = frozenset()        # vowel phonemes: a stretched word's extra length goes to these
     SONORANT = frozenset()      # voiced sounds: pitch dropouts over these are bridged, drawn-out words held
     QUESTION_MARKS = '?'        # a token holding one of these ends a question
+    # singing: what can carry a note of its own
+    MORA_NASALS = frozenset()   # nasals that are a beat of their own when no vowel follows (Japanese ん)
+    LONG_MORA = False           # a length mark is a beat of its own (Japanese ー: そう = so + o)
+    WEAK_NUCLEI = frozenset()   # the first to give up their own note when a word has more beats than notes
 
     PAUSE_MARK = ','            # added after a word with a | mark, so the model has something to hold
     CHARS_PER_SECOND = 14.0     # rough speech rate at speed 1, for render time estimates

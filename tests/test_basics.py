@@ -231,6 +231,14 @@ class Singing(unittest.TestCase):
         self.assertEqual(sing.split_word('fˈIəɹ', 1, en), [('fˈ', 'I', 'əɹ')])    # one sung syllable
         self.assertEqual(sing.split_word('ˈɛvəɹiθˌɪŋ', 3, en), [('ˈ', 'ɛ', 'və'), ('ɹ', 'i', ''), ('θˌ', 'ɪ', 'ŋ')])
 
+    def test_japanese_beats(self):
+        from jivetalker import lang, sing
+        ja = lang.get('ja')
+        self.assertEqual(sing.split_word('ɡeŋkʲi', 3, ja), [('ɡ', 'e', ''), ('', 'ŋ', ''), ('kʲ', 'i', '')])
+        self.assertEqual(sing.split_word('ɡeŋkʲi', 2, ja), [('ɡ', 'e', 'ŋ'), ('kʲ', 'i', '')])     # ん joins げ
+        self.assertEqual(sing.split_word('soː', 2, ja), [('s', 'o', ''), ('', 'ː', '')])
+        self.assertEqual(sing.split_word('kiʔte', 2, ja), [('k', 'i', 'ʔ'), ('t', 'e', '')])
+
     def test_phonemic_lyrics(self):
         from jivetalker import lang, sing
         song = sing.parse_abc('K:C\nC D E F G\nw: Twin/twˈɪŋ/-kle the /fˈIəɹ/,\n')

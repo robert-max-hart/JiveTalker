@@ -35,6 +35,9 @@ class Japanese(Language):
     # nasals (n, ɲ, ŋ, ɴ, m), the flap ɾ, the glides j and β (the particle wa), palatalisation and length
     SONORANT = VOWELS | frozenset('mnɲŋɴɾjβwᵝʲː')
     QUESTION_MARKS = '?？'
+    MORA_NASALS = frozenset('ɴŋmnɲ')     # ん before a consonant or at the end (げんき = ge + ŋ + kʲi)
+    LONG_MORA = True
+    WEAK_NUCLEI = frozenset('ɴŋmnɲː')    # with fewer notes, ん and ー join the beat before them
     PAUSE_MARK = '、'
     CHARS_PER_SECOND = 8.0
 
