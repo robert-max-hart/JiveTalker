@@ -155,6 +155,79 @@ class Editor(unittest.TestCase):
             self.assertEqual(p.read_bytes().decode('utf-8'), SCRIPT.replace('\n', '\r\n'))
 
 
+class Languages(unittest.TestCase):
+    """per-language rules (lang/): no model needed; the Japanese phonemizer test needs misaki[ja] and UniDic"""
+
+    def test_lang_setting(self):
+        d = styles.parse_direction('deep, lang ja')
+        self.assertEqual(styles.resolve(d)['lang'], 'ja')
+        self.assertEqual(str(d), 'deep, lang ja')
+        self.assertNotIn('lang', styles.resolve(styles.parse_direction('lang en')))   # English: keys unchanged
+        for bad in ('lang xx', 'lang'):
+            with self.assertRaises(ValueError, msg=bad):
+                styles.parse_direction(bad)
+        errs = Script.parse(SCRIPT + '@ramp lang 0 -> 1\nc9.e1 Mara: hi\n@end\n').jobs()[1]
+        self.assertTrue(any('@ramp' in e for _, e in errs))
+
+    def test_english_keys_ignore_lang_en(self):
+        jobs = {j.id: j for j in parse().jobs()[0]}
+        job = jobs['c1.e10']
+        en = render.cache_key(job)
+        job.direction = styles.merge(job.direction, styles.parse_direction('lang en'))
+        self.assertEqual(render.cache_key(job), en)
+        job.direction = styles.merge(job.direction, styles.parse_direction('lang ja'))
+        self.assertNotEqual(render.cache_key(job), en)
+
+    def test_japanese_rules(self):
+        from jivetalker import lang
+        ja = lang.get('ja')
+        self.assertEqual(ja.question_rises({}, '何ですか？はい。本当？'), [ja.QUESTION['auto']] * 2)
+        self.assertEqual(ja.question_rises({'rise': 2.0}, 'そう？'), [2.0])
+        self.assertEqual(ja.stress(1)['dur'], 1.0)          # vowel length is meaning in Japanese
+        self.assertEqual(marks.parse('[目](|)を', ja).g2p, '目、を')
+
+    def test_unspaced_words(self):
+        self.assertEqual(marks.apply_marks('今日は目を閉じて', marks.marked_words('今日は[目](+)を閉じて'))[0],
+                         '今日は[目](+)を閉じて')
+        self.assertEqual(marks.apply_pronounce('ミラは来た', {'ミラ': '/miɾa/'}), '[ミラ](/miɾa/)は来た')
+        self.assertEqual(marks.apply_pronounce('Maraschino', {'Mara': '/x/'}), 'Maraschino')
+
+    def test_japanese_words_match_kokoro(self):
+        try:
+            from misaki import ja as misaki_ja
+            g2p = misaki_ja.JAG2P()
+        except Exception as e:                              # optional: misaki[ja] + UniDic
+            self.skipTest(f'Japanese phonemizer not installed ({e})')
+        from types import SimpleNamespace
+        from jivetalker import lang
+        ja, pipe = lang.get('ja'), SimpleNamespace(g2p=g2p)
+        vocab = set(' !"(),.:;?abdehijkmnoprstuvwzçŋɕɡɨɯɲɴɸɾʔʣʥʦʨʲβᵝː—“”…')
+        mt = marks.parse('さあ、[目](+)を閉じて…[深く](++)息を吸って。それは本当ですか？', ja)
+        with _no_warnings(self):
+            toks = ja.tokenize(pipe, mt, vocab)
+        said = ' '.join(t.text for t in toks if t.span and any(t.span[0] < m.end and t.span[1] > m.start for m in mt.marks))
+        self.assertEqual(said, '目 深く')
+        ps = ''.join(t.phonemes + (' ' if t.whitespace else '') for t in toks)
+        self.assertIn('saː, me', ps)                       # the 、 cutlet drops is back
+        self.assertIn('sɨʔte. soɾe', ps)                   # and the 。
+
+
+class _no_warnings:
+    def __init__(self, test):
+        self.test = test
+
+    def __enter__(self):
+        import warnings
+        self.cm = warnings.catch_warnings(record=True)
+        self.caught = self.cm.__enter__()
+        warnings.simplefilter('always')
+
+    def __exit__(self, *exc):
+        self.cm.__exit__(*exc)
+        mine = [w for w in self.caught if 'jivetalker' in str(w.message)]
+        self.test.assertEqual(mine, [])
+
+
 GOLDEN_KEY ="871ac1f61f37b41a38624d547580d285de26851030d7ac1c8e93c66eb9175ae9"
 
 if __name__ == '__main__':

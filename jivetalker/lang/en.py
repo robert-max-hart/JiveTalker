@@ -69,17 +69,6 @@ class English(Language):
             out.append(tok)
         return out
 
-    def pause_kind(self, run):
-        if '…' in run or run.count('.') >= 2:
-            return 'ellipsis'
-        if any(c in run for c in '.!?'):
-            return 'sentence'
-        if '—' in run:
-            return 'dash'
-        if any(c in run for c in ';:'):
-            return 'clause'
-        return 'comma'
-
     def question_rises(self, settings, plain):
         """The line's `rise` applies to all. Otherwise: a one-word question gets QUESTION['auto']; a longer one
         QUESTION['auto_multi'], unless one of its clauses starts with a wh-word ("So Mara, when was...?"), since

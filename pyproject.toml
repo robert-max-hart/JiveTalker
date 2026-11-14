@@ -17,6 +17,9 @@ dependencies = [
     "soundfile>=0.12",        # wheels bundle libsndfile with Ogg Opus
 ]
 
+[project.optional-dependencies]
+ja = ["misaki[ja]==0.9.4"]    # then: python -m unidic download
+
 [project.scripts]
 jivetalker = "jivetalker.cli:main"
 

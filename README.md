@@ -43,6 +43,9 @@ with the `espeakng-loader` package, so there is nothing else to install. On firs
 330 MB) downloads from Hugging Face; for offline use, pass `--model-dir` (a folder with `config.json` and
 the `.pth`).
 
+**Japanese** (optional): `pip install -e "$HOME/git/JiveTalker[ja]"`, then `python -m unidic download` (the
+dictionary, about 800 MB). See [Languages](VOICE_SCRIPT.md#languages).
+
 Tests (no model or audio needed): `python -m unittest discover -s tests`.
 
 ## Editing scripts: `jivetalker edit`
@@ -109,7 +112,7 @@ jivetalker voice build voices/mara.recipe.json -o m.pt  # rebuild a .pt from a r
 - Recipes written before the rename (marked `voicegen_recipe`) still load.
 
 Layout: `engine.py` (the model with duration/pitch editing), `styles.py` (styles and how directions
-resolve), `marks.py` (word marks), `lang/` (what depends on the language: the phonemizer, phoneme classes, pauses, stress and question rules; only English, `lang/en.py`, so far), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
+resolve), `marks.py` (word marks), `lang/` (what depends on the language: the phonemizer, phoneme classes, pauses, stress and question rules; `en.py`, `ja.py`), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
 (the voice script), `render.py` (caching and the manifest), `voicelab.py` (recipes and axes), `mixer.py` +
 `mixer.html` (the voice mixer), `toolkit.py` + `toolkit.html` (the page with both tabs, and the script editor), `cli.py`.
 

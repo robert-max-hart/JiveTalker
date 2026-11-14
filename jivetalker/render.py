@@ -21,7 +21,6 @@ from .common import STOCK_PREFIXES
 
 MANIFEST = 'manifest.json'
 CLIP_RE = re.compile(r'^(.+)_([0-9a-f]{10})\.(ogg|wav|flac)$')
-CHARS_PER_SECOND = 14.0         # rough speech rate at speed 1, for estimates
 RENDER_FACTOR = 0.75            # CPU seconds per second of audio (measured on the dev machine)
 MODEL_LOAD = 10.0
 
@@ -50,7 +49,7 @@ def tuning(job, settings, lang=None):
     """the tuning constants this line depends on (so tuning one style only rebuilds the lines using it).
     lang: the line's language (default English)"""
     from . import dsp, engine
-    L = languages.get(lang)
+    L = languages.get(lang if lang is not None else settings.get('lang'))
     t = {'level': [dsp.LEVEL_TARGET, dsp.PEAK_LIMIT], 'voiced': engine.VOICED_HZ,
          'timing': [styles.PAUSES, styles.PAUSE_HUMAN, styles.LENGTH_CAP, styles.PITCH_BRIDGE, styles.QUIET_ENERGY, styles.QUIET_EASE]}
     mt = marks_mod.parse(job.text, L)
@@ -88,8 +87,9 @@ def cache_key(job):
 
 def estimate_seconds(job):
     s = styles.resolve(job.direction)
-    plain = marks_mod.parse(job.text).plain
-    return len(plain) / CHARS_PER_SECOND / max(0.3, s['speed']) * (1 + 0.15 * (s['pause'] - 1))
+    L = languages.get(s.get('lang'))
+    plain = marks_mod.parse(job.text, L).plain
+    return len(plain) / L.CHARS_PER_SECOND / max(0.3, s['speed']) * (1 + 0.15 * (s['pause'] - 1))
 
 
 def fmt_time(seconds):

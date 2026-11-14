@@ -19,6 +19,16 @@ from . import lang as languages
 from .styles import DESTRESS_LEVELS, MARK_LEVELS, PAUSE_MARKS, PAUSE_MAX, SHAPE_MAX
 
 MARK_RE = re.compile(r'\[([^\]]+)\]\(([^)]*)\)')
+# scripts written without spaces between words (kana, kanji): a word there has no word boundary to look for
+UNSPACED = re.compile('[\u3005\u3006\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]')
+
+
+def word_re(word, inside=r'\w'):
+    """a regex for `word` standing alone: not inside a longer word (characters in `inside`) on either side,
+    except on a side where the word is written in a script without spaces"""
+    before = '' if UNSPACED.match(word[:1]) else f'(?<![{inside}])'
+    after = '' if UNSPACED.match(word[-1:]) else f'(?![{inside}])'
+    return before + re.escape(word) + after
 
 
 @dataclass(frozen=True)
@@ -108,12 +118,11 @@ def apply_pronounce(text, table):
     already carry a mark keep it as written (a mark holds either a stress or a respelling)."""
     if not table:
         return text
-    pat = re.compile(r"(?<![\w'’])(" + '|'.join(re.escape(w) for w in sorted(table, key=len, reverse=True)) +
-                     r")(?![\w'’])")
+    pat = re.compile('|'.join(word_re(w, r"\w'’") for w in sorted(table, key=len, reverse=True)))
     out, pos = [], 0
     for m in list(MARK_RE.finditer(text)) + [None]:
         end = m.start() if m else len(text)
-        out.append(pat.sub(lambda w: f'[{w.group(1)}]({table[w.group(1)]})', text[pos:end]))
+        out.append(pat.sub(lambda w: f'[{w.group(0)}]({table[w.group(0)]})', text[pos:end]))
         if m:
             out.append(m.group(0)); pos = m.end()
     return ''.join(out)
@@ -138,14 +147,14 @@ def marked_words(text):
 
 
 def _count_word(text, word):
-    return len(re.findall(r'(?<!\w)' + re.escape(word) + r'(?!\w)', text))
+    return len(re.findall(word_re(word), text))
 
 
 def apply_marks(plain, wanted):
     """re-apply [(word, spec, occurrence)] to an unmarked text; returns (marked text, [words not found])"""
     spans, missing = [], []
     for word, spec, occ in wanted:
-        hits = [m for m in re.finditer(r'(?<!\w)' + re.escape(word) + r'(?!\w)', plain)]
+        hits = list(re.finditer(word_re(word), plain))
         if not hits:
             missing.append(word); continue
         h = hits[min(occ, len(hits) - 1)]

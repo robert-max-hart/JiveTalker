@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from . import marks as marks_mod, render as render_mod, styles
+from . import lang as languages, marks as marks_mod, render as render_mod, styles
 from .common import STOCK_PREFIXES
 from .script import LINE_RE, Script
 
@@ -254,6 +254,8 @@ class ScriptDoc:
                 value = sum(v for _, v in srcs)
             elif name == 'rise':
                 value = srcs[-1][1] if srcs else None
+            elif name in styles.TEXT_SETTINGS:
+                value = srcs[-1][1] if srcs else languages.DEFAULT
             else:
                 value = res.get(k_eng, styles.DEFAULTS.get(k_eng, 0.0))
             if srcs:
@@ -265,13 +267,13 @@ class ScriptDoc:
             else:
                 src = 'style' if k_eng in style_vals else 'default'
             settings[name] = {'value': _num(value), 'src': src}
-        plain = marks_mod.parse(ln.text).plain if not out['errors'] else ln.text
+        plain = marks_mod.parse(ln.text, res.get('lang')).plain if not out['errors'] else ln.text
         out.update({
             'style': style, 'depth': _num(merged.depth) if merged.depth is not None else None,
             'style_src': style_src, 'own_style': own.style, 'own_depth': own.depth,
             'own_effects': own.effects, 'own_settings': {inv[k]: _num(v) for k, v in own.settings.items()},
             'effects': effects, 'settings': settings, 'level_db': _num(res['level_db']),
-            'rises': [_num(r) for r in styles.question_rises(res, plain)],
+            'rises': [_num(r) for r in styles.question_rises(res, plain, res.get('lang'))],
             'layers': {k: (str(d) if d else '') for k, d in layers},
         })
         job = by_id.get(ln.id)
@@ -348,11 +350,12 @@ class Toolkit:
         for j in jobs:
             if want and j.id not in want:
                 continue
-            if j.text not in self.words_cache:
+            lang = styles.resolve(j.direction).get('lang')
+            if (lang, j.text) not in self.words_cache:
                 with self.lock:
-                    toks = self.eng.tokenize(marks_mod.parse(j.text))
-                self.words_cache[j.text] = [t.text for t in toks if t.unknown]
-            out[j.id] = self.words_cache[j.text]
+                    toks = self.eng.tokenize(marks_mod.parse(j.text, lang), lang)
+                self.words_cache[(lang, j.text)] = [t.text for t in toks if t.unknown]
+            out[j.id] = self.words_cache[(lang, j.text)]
         return out
 
     # ------------------------------------------------------------------ rendering the script

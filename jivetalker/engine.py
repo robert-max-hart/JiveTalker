@@ -524,7 +524,7 @@ class Engine:
         """
         d = styles.parse_direction(direction) if isinstance(direction, str) else direction
         s = styles.resolve(d)
-        L = self.lang
+        L = languages.get(s['lang']) if 'lang' in s else self.lang
         mt = marks_mod.parse(text, L)
         tokens = self.tokenize(mt, L)
 

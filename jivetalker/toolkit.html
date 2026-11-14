@@ -243,7 +243,7 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 'use strict';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
-const fmtNum = v => String(Math.round(v * 1000) / 1000);
+const fmtNum = v => typeof v === 'string' ? v : String(Math.round(v * 1000) / 1000);
 const store = {
   get(k, d) { try { const v = localStorage.getItem('jt.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('jt.' + k, JSON.stringify(v)); } catch (e) {} }
@@ -1017,7 +1017,8 @@ const MARK_ITEMS = [['+', 'stress: a pitch lift, a little louder and longer'], [
   ['^1.5', 'shift the pitch by semitones'], ['^2>-1', 'pitch glide: start 2 up, end 1 down'], ['^0>3>0', 'pitch arc'],
   ['|', 'pause after: 0.2 s (||| = 0.6 s, up to |||||)'], ['|0.8', 'pause after: exactly 0.8 s'], ['//', 'pronounce: IPA between the slashes'], ['=', 'say different words (nothing after = is silent)']];
 const DIR_ITEMS = [...STYLE_NAMES.map(n => [n === 'trance' ? 'trance 0.6' : n, STYLE_HINT[n]]), ...EFFECTS,
-  ...SETTINGS.map(([n, h]) => [n + ' ', h]), ['take ', 'a different variation of the line']];
+  ...SETTINGS.map(([n, h]) => [n + ' ', h]), ['take ', 'a different variation of the line'],
+  ['lang ja', 'the language spoken: en (default) or ja']];
 const AT_ITEMS = [['@cast ', 'Name = voice | aliases {direction}'], ['@defaults ', 'a direction for every line'], ['@voices ', 'the folder voice names are looked up in'],
   ['@pronounce ', 'Word = /ipa/'], ['@ramp trance 0.2 -> 1.0', 'change trance or a setting across one speaker\'s lines'], ['@end', 'ends a ramp']];
 let comp = null;

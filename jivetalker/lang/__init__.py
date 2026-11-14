@@ -45,6 +45,7 @@ class Language:
     QUESTION_MARKS = '?'        # a token holding one of these ends a question
 
     PAUSE_MARK = ','            # added after a word with a | mark, so the model has something to hold
+    CHARS_PER_SECOND = 14.0     # rough speech rate at speed 1, for render time estimates
 
     STRESS = {}                 # level (1, 2, -1) -> per-word edit, see styles.word_edit
     STRESS_MORE = {}            # levels 3-5 and -2, -3
@@ -69,8 +70,17 @@ class Language:
         raise NotImplementedError
 
     def pause_kind(self, run):
-        """a run of punctuation (with spaces) in the phoneme string -> a styles.PAUSES kind"""
-        raise NotImplementedError
+        """a run of punctuation (with spaces) in the phoneme string -> a styles.PAUSES kind. The default reads
+        the ASCII punctuation misaki writes for every language."""
+        if '…' in run or run.count('.') >= 2:
+            return 'ellipsis'
+        if any(c in run for c in '.!?'):
+            return 'sentence'
+        if '—' in run:
+            return 'dash'
+        if any(c in run for c in ';:'):
+            return 'clause'
+        return 'comma'
 
     def question_rises(self, settings, plain):
         """semitones of rise for each question in the plain text, in order"""
@@ -88,6 +98,10 @@ def register(cls, *aliases):
     return lang
 
 
+def codes():
+    return sorted(LANGUAGES)
+
+
 def get(code=None):
     """a Language by its code (or alias); None = the default (English). A Language passes through."""
     if isinstance(code, Language):
@@ -99,4 +113,4 @@ def get(code=None):
     return LANGUAGES[code]
 
 
-from . import en  # noqa: E402,F401  (registers English)
+from . import en, ja  # noqa: E402,F401  (registers them)

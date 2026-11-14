@@ -110,8 +110,9 @@ QUESTION = _en.QUESTION     # the English tuning, kept for older code
 
 SETTING_NAMES = {'speed': 'speed', 'pitch': 'pitch', 'range': 'range_', 'drift': 'drift', 'pause': 'pause',
                  'floor': 'floor', 'human': 'human', 'volume': 'volume', 'take': 'take', 'rise': 'rise',
-                 'breath': 'breath'}
+                 'breath': 'breath', 'lang': 'lang'}
 ADDITIVE = ('pitch', 'volume')
+TEXT_SETTINGS = ('lang',)   # settings that hold a word, not a number (and can't be ramped)
 
 
 @dataclass
@@ -127,7 +128,7 @@ class Direction:
             parts.append(self.style if self.depth is None else f'{self.style} {self.depth:g}')
         parts += self.effects
         inv = {v: k for k, v in SETTING_NAMES.items()}
-        parts += [f'{inv[k]} {v:g}' for k, v in self.settings.items()]
+        parts += [f'{inv[k]} {v}' if isinstance(v, str) else f'{inv[k]} {v:g}' for k, v in self.settings.items()]
         return ', '.join(parts)
 
 
@@ -150,6 +151,11 @@ def parse_direction(text):
         elif name in EFFECTS:
             d.effects.append(name)
         elif name in SETTING_NAMES:
+            if name in TEXT_SETTINGS:
+                if len(words) != 2:
+                    raise ValueError(f'"{name}" needs one value: {", ".join(languages.codes())}')
+                d.settings[name] = languages.get(words[1]).code      # unknown languages raise ValueError
+                continue
             if len(words) != 2:
                 raise ValueError(f'"{name}" needs one number, e.g. "{name} 1.2"')
             v = float(words[1])
@@ -186,6 +192,8 @@ def resolve(direction):
         if k == 'speed':
             continue
         s[k] = s[k] + v if k in ADDITIVE else v
+    if s.get('lang') == languages.DEFAULT:     # English is the default: its lines keep their cache keys
+        del s['lang']
     s['style'] = name
     s['effects'] = list(direction.effects)
     s['level_db'] = STYLE_LEVEL_DB.get(name, 0.0) + s.pop('volume')

@@ -88,6 +88,7 @@ A direction is a comma-separated list: at most one **style**, any **effects**, a
 | `floor 0.55` | ends voicing cleanly when pitch sags (cures growl at line ends) | from style |
 | `rise 5` | semitones of question rise on the word before each `?`: level at first, then sharp. Kokoro says questions like statements, so they rise automatically: one-word questions ("Mara?", "Twenty?") by 5, longer ones by 3, except when a clause starts with who/what/when/where/why/how/which (those fall). Setting `rise` applies it to every question in the line; `rise 0` turns it off | auto |
 | `breath 0.5` | mixes the speaker's own whisper into the voice: 0 = none, 1 = all whisper. Not for `whisper` itself | 0 (`soft`: 0.15) |
+| `lang ja` | the language the line is in: `en` or `ja` (see [Languages](#languages)). Can't be ramped | `en` |
 
 Directions combine in this order: `@defaults`, then the speaker's `@cast` direction, then a ramp, then the
 line's own. A later style replaces an earlier one, settings replace earlier settings (except `pitch` and
@@ -138,6 +139,31 @@ A ramp gradually changes a style or setting across the lines of one speaker: by 
 speaker, or name one with `@ramp trance 0.2 -> 1.0 for Doctor Lee`. Other speakers' lines in between
 are untouched. Ramps work on `trance` or any setting, for example `@ramp speed 1.0 -> 0.8`. A line's own
 style wins over the ramp, but a line with only settings (such as `{pause 2.2}`) keeps the ramp's style.
+
+## Languages
+
+Lines are English unless a direction says otherwise. Put `lang` where it fits: `@defaults lang ja` for a
+whole script, `@cast Kenji = jm_kumo {lang ja}` for one speaker, or `{lang ja}` on a single line. English
+lines keep their clips: `lang` only enters the cache key when it isn't `en`.
+
+The script format and the marks are the same in every language; what they do is the language's own rule.
+
+**Japanese** (`lang ja`; stock voices `jf_alpha`, `jf_gongitsune`, `jf_nezumi`, `jf_tebukuro`, `jm_kumo`).
+It needs an extra install (see the README). Its stress and question values are **first guesses, not yet
+tuned by ear**.
+
+- Mark words as usual: `さあ、[目](+)を閉じて…[深く](++||)息を吸って。` Brackets must be ASCII `[ ]( )`.
+- `+` / `-` lift or lower the word's pitch and make it a little louder or quieter. They keep the word's own
+  pitch accent, and don't make it longer: vowel length changes meaning in Japanese. `~` still draws a word
+  out, since there you ask for it.
+- Every question with `？` or `?` rises (4 semitones, on the word before it, usually the particle);
+  `rise` overrides it as in English.
+- To give a reading, substitute kana: `[明日](=あした)` (the screen keeps 明日). `[ミラ](/miɾa/)` gives the
+  phonemes directly.
+- `@pronounce` matches a word anywhere, even inside a longer one (there are no spaces to tell words apart):
+  `@pronounce ミラ` also changes ミラー. Mark single occurrences when that matters.
+- Unlike stock Kokoro, `、` and `。` and the 「」 quotes are spoken as pauses: Kokoro's Japanese phonemizer
+  drops them, which leaves no pause between sentences.
 
 ## Commands
 

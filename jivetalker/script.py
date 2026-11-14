@@ -128,7 +128,7 @@ class Script:
                     sc.errors.append((n, 'a @ramp inside another @ramp (missing @end?)'))
                 ramp = Ramp(m.group(1), float(m.group(2)), float(m.group(3)),
                             m.group(4).strip() if m.group(4) else None, n)
-                if ramp.what != 'trance' and ramp.what not in styles.SETTING_NAMES:
+                if ramp.what != 'trance' and (ramp.what not in styles.SETTING_NAMES or ramp.what in styles.TEXT_SETTINGS):
                     sc.errors.append((n, f'@ramp: "{ramp.what}" is not trance or a setting'))
                 sc.items.append(('ramp', ramp))
             elif s == '@end':
