@@ -22,31 +22,15 @@ from pathlib import Path
 import numpy as np
 import scipy.ndimage as nd
 
-from . import dsp, marks as marks_mod, styles
+from . import dsp, lang as languages, marks as marks_mod, styles
 from .common import STOCK_PREFIXES, make_seed  # noqa: F401  (re-exported)
+from .lang import Token  # noqa: F401  (re-exported)
 
 KOKORO_VERSION = '0.9.4'
 REPO_ID = 'hexgrad/Kokoro-82M'
 MAX_PHONEMES = 510
 VOICED_HZ = 70.0                    # F0 below this = onset/fade-out frames; never reshape them
-PUNCT = set(',.;:!?—…')
-SENTENCE_END = set('.!?…')
-# vowels (misaki's capitals are diphthongs), voiced sonorants, the flap, and stress/length marks
-VOWELS = set('aeiouæɑɐɒɔəɚɛɜɪʊʌᵊᵻAIOWY')
-SONORANT = VOWELS | set('lɹwjmnŋɫTˈˌː')
-
-
-@dataclass
-class Token:
-    text: str
-    phonemes: str       # already filtered to the model's vocabulary
-    whitespace: bool
-    span: tuple = None  # character span in the plain text, if it could be aligned
-    unknown: bool = False
-
-    @property
-    def is_word(self):
-        return any(c.isalpha() for c in self.phonemes)
+# Punctuation, vowels and sonorants (as the phonemizer writes them) come from the language: see lang/.
 
 
 @dataclass
@@ -58,8 +42,9 @@ class Rendered:
 
 
 class Engine:
-    def __init__(self, model_dir=None, lang='a'):
-        """model_dir: a folder with config.json and the .pth (offline use); default downloads from HF."""
+    def __init__(self, model_dir=None, lang=None):
+        """model_dir: a folder with config.json and the .pth (offline use); default downloads from HF.
+        lang: the language the engine speaks, a code or Language (default English; see lang/)"""
         import kokoro
         if kokoro.__version__ != KOKORO_VERSION:
             raise RuntimeError(f'jivetalker needs kokoro=={KOKORO_VERSION} (it re-implements part of the model); '
@@ -73,10 +58,20 @@ class Engine:
             d = Path(model_dir)
             pth = next(d.glob('*.pth'))
             model = KModel(repo_id=REPO_ID, config=str(d / 'config.json'), model=str(pth)).eval()
-        self.pipe = KPipeline(lang_code=lang, repo_id=REPO_ID, model=model if model is not None else True)
+        self.lang = languages.get(lang)
+        self.pipe = KPipeline(lang_code=self.lang.kokoro, repo_id=REPO_ID, model=model if model is not None else True)
         self.m = self.pipe.model
         self.vocab = self.m.vocab
         self._packs = {}
+        self._pipes = {self.lang.kokoro: self.pipe}
+
+    def pipeline(self, lang=None):
+        """Kokoro's pipeline (the phonemizer) for a language, sharing this engine's model"""
+        L = self.lang if lang is None else languages.get(lang)
+        if L.kokoro not in self._pipes:
+            from kokoro import KPipeline
+            self._pipes[L.kokoro] = KPipeline(lang_code=L.kokoro, repo_id=REPO_ID, model=self.m)
+        return self._pipes[L.kokoro]
 
     # ------------------------------------------------------------------ voices
     def voice(self, spec):
@@ -98,23 +93,13 @@ class Engine:
         return self.torch.cat([self.voice(timbre_voice)[..., :128], self.voice(delivery_voice)[..., 128:]], dim=-1)
 
     # ------------------------------------------------------------------ text -> tokens
-    def tokenize(self, marked):
-        """MarkedText -> [Token], with character spans aligned to marked.plain"""
-        _, mtoks = self.pipe.g2p(marked.g2p)
-        out, pos = [], 0
-        for t in mtoks:
-            raw = t.phonemes or ''
-            ps = ''.join(c for c in raw if c in self.vocab)
-            tok = Token(t.text, ps, bool(t.whitespace), unknown='❓' in raw)
-            if t.text:
-                i = marked.align.find(t.text, pos)
-                if i >= 0 and not marked.align[pos:i].strip(' \t\n-–—'):    # a dash the phonemizer re-spelt
-                    tok.span = (i, i + len(t.text)); pos = i + len(t.text)
-            out.append(tok)
-        return out
+    def tokenize(self, marked, lang=None):
+        """MarkedText -> [Token], with character spans aligned to marked.plain (parse it in the same language)"""
+        L = self.lang if lang is None else languages.get(lang)
+        return L.tokenize(self.pipeline(L), marked, self.vocab)
 
     @staticmethod
-    def chunks(tokens):
+    def chunks(tokens, L):
         """split a token list so each piece fits Kokoro's 510 phonemes, preferring sentence ends"""
         def length(ts):
             return len(Engine.phoneme_string(ts))
@@ -124,10 +109,10 @@ class Engine:
         for t in tokens:
             cur.append(t)
             if length(cur) > MAX_PHONEMES:
-                cut = max((i + 1 for i, x in enumerate(cur[:-1]) if x.phonemes and x.phonemes[-1] in SENTENCE_END),
+                cut = max((i + 1 for i, x in enumerate(cur[:-1]) if x.phonemes and x.phonemes[-1] in L.SENTENCE_END),
                           default=None)
                 if cut is None:
-                    cut = max((i + 1 for i, x in enumerate(cur[:-1]) if x.phonemes and x.phonemes[-1] in PUNCT),
+                    cut = max((i + 1 for i, x in enumerate(cur[:-1]) if x.phonemes and x.phonemes[-1] in L.PUNCT),
                               default=len(cur) - 1)
                 out.append(cur[:cut]); cur = cur[cut:]
         if cur:
@@ -155,7 +140,7 @@ class Engine:
 
     # ------------------------------------------------------------------ the model, with edits
     def _synth_chunk(self, ps, word_spans, edits, pack, speed=1.0, pitch=0.0, range_=1.0, drift=0.0,
-                     pause=1.0, floor=0.0, human=0.0, rng=None):
+                     pause=1.0, floor=0.0, human=0.0, rng=None, lang=None):
         """
         ps         : phoneme string (<= 510)
         word_spans : id spans of the words (for `human` and per-word edits)
@@ -166,9 +151,11 @@ class Engine:
         pause      : multiplier on punctuation durations
         floor      : end voicing when F0 sags below floor x median (0 = off)
         human      : variation strength (1.0 = approved default), drawn from rng
+        lang       : the Language (punctuation, vowels, sonorants, pauses, question tuning)
         returns (audio, f0)
         """
         torch, m = self.torch, self.m
+        lg = self.lang if lang is None else languages.get(lang)    # (L is the input length below)
         ids = torch.LongTensor([[0] + [self.vocab[c] for c in ps] + [0]])
         ref_s = pack[len(ps) - 1]
         L = torch.full((1,), ids.shape[-1], dtype=torch.long)
@@ -180,7 +167,7 @@ class Engine:
         dur = torch.sigmoid(m.predictor.duration_proj(x)).sum(axis=-1).squeeze(0) / speed
 
         # ---- durations
-        dur = torch.minimum(dur, self.length_caps(ps, speed))
+        dur = torch.minimum(dur, self.length_caps(ps, speed, lg))
         if human:
             dur *= float(np.exp(rng.normal(0, 0.03 * human)))                 # line tempo
             for a, b in word_spans:
@@ -188,7 +175,7 @@ class Engine:
         natural = dur.clone()                   # before marks lengthen words: what pitch/energy are predicted on
         for (a, b), o in edits.items():
             if o.get('dur', 1.0) != 1.0:
-                dur[a:b] = self.stretch_word(ps, a, b, dur[a:b], o['dur'], speed, o.get('cap'))
+                dur[a:b] = self.stretch_word(ps, a, b, dur[a:b], o['dur'], speed, lg, o.get('cap'))
         # pauses: Kokoro holds mid-line punctuation for only 30-50 ms. The mark is lengthened to the pause, and
         # voicing and energy are switched off over it below, so the decoder itself renders the fade into the
         # silence and the next word's start. (Cutting silence into the audio afterwards chopped tails and left
@@ -196,7 +183,7 @@ class Engine:
         # A | mark sets the pause after its word(s) (after the last word, when the mark covers several).
         marked = {max(sp[1] for sp, o2 in edits.items() if o2.get('group') == o['group']): o
                   for o in edits.values() if o.get('pause_after')}
-        for i0, j, kind in self.pause_groups(ps):
+        for i0, j, kind in self.pause_groups(ps, lg):
             o = marked.get(i0 + 1)
             target = (o['pause_after'] * (1 if o.get('pause_exact') else pause) if o
                       else styles.PAUSES[kind] * pause)
@@ -221,10 +208,10 @@ class Engine:
             F0, N = self.retime(F0, pd_n, pd), self.retime(N, pd_n, pd)
 
         # ---- pitch, as a semitone offset curve applied to voiced frames
-        f, gaps = self.bridge_dips(F0[0], ps, ids_at.numpy())
+        f, gaps = self.bridge_dips(F0[0], ps, ids_at.numpy(), lg)
         for a_, b_ in gaps:                     # the energy curve drops out with the pitch: fill it the same way
             N[0, a_ + 1:b_] = torch.linspace(float(N[0, a_]), float(N[0, b_]), b_ - a_ + 1)[1:-1]
-        self.sustain(f, N, ps, ids_at, edits, starts=None, pd=pd)
+        self.sustain(f, N, ps, ids_at, edits, lg, pd=pd)
         v = f > VOICED_HZ
         st = torch.zeros_like(f)
         if v.any():
@@ -241,13 +228,13 @@ class Engine:
                 st[int(starts[a]):int(ends[b - 1])] += float(rng.normal(0, pk))
             wander = torch.tensor(nd.gaussian_filter1d(rng.normal(0, 1, f.shape[0]), 25), dtype=torch.float32)
             st += wander / (wander.std() + 1e-9) * 0.3 * pk / 0.35
-        self.stress(f, v, st, edits, word_spans, starts, ends)
+        self.stress(f, v, st, edits, word_spans, starts, ends, lg)
         if edits or human:   # smooth the OFFSET (edge-replicated), never F0 itself
             k = torch.ones(1, 1, 9) / 9
             st = torch.nn.functional.conv1d(
                 torch.nn.functional.pad(st.view(1, 1, -1), (4, 4), mode='replicate'), k).view(-1)
         # question rise: after the smoothing, which would otherwise blur away part of the flattening
-        Q = styles.QUESTION
+        Q = lg.QUESTION
         for (a, b), o in edits.items():
             if not o.get('rise'):
                 continue
@@ -288,7 +275,7 @@ class Engine:
         # Energy is eased in and out of the quiet (no clicks); pitch is simply off.
         quiet = torch.zeros(len(ps) + 2, dtype=torch.bool)
         quiet[0] = quiet[-1] = True
-        for a, b in self.punct_runs(ps):
+        for a, b in self.punct_runs(ps, lg):
             quiet[a + 1:b + 2] = True
         qf = quiet[ids_at]
         f = torch.where(qf, torch.zeros_like(f), f)
@@ -313,7 +300,7 @@ class Engine:
         return audio, f
 
     @staticmethod
-    def sustain(f, N, ps, ids_at, edits, starts=None, pd=None):
+    def sustain(f, N, ps, ids_at, edits, L, pd=None):
         """Drawn-out words are held: the model trails a long or phrase-final word off (the "ee" of the second
         "deeper" lost its pitch and energy, and the "-per" went with it). Over the word's vowels and sonorants,
         missing pitch is filled from the word's own voiced pitch (held at the ends) and energy is kept up to
@@ -329,7 +316,7 @@ class Engine:
                 continue
             lo, hi = int(begins[a]), int(ends[b - 1])
             k = np.arange(lo, hi)
-            son = np.array([0 < i <= len(ps) and ps[i - 1] in SONORANT for i in ids_at[lo:hi].numpy()])
+            son = np.array([0 < i <= len(ps) and ps[i - 1] in L.SONORANT for i in ids_at[lo:hi].numpy()])
             if not son.any():
                 continue
             fv = f[lo:hi].numpy(); vv = fv > VOICED_HZ
@@ -372,7 +359,7 @@ class Engine:
         return torch.tensor(np.interp(src, np.arange(len(c)), c), dtype=curve.dtype).unsqueeze(0)
 
     @staticmethod
-    def stretch_word(ps, a, b, seg, factor, speed, cap=None):
+    def stretch_word(ps, a, b, seg, factor, speed, L, cap=None):
         """lengthen (or shorten) one word's sounds by `factor`, but no sound past `cap` seconds (default
         styles.STRETCH_CAP; even one the model already held longer); what doesn't fit goes to the word's vowels.
         A sound the model already holds long (an "r" before a comma) stretched again distorts ("deeper").
@@ -382,22 +369,22 @@ class Engine:
         if factor <= 1.0:
             return new
         cap = (styles.STRETCH_CAP if cap is None else cap) * 40.0 / speed
-        last = max((i for i, c in enumerate(ps) if c not in PUNCT and c != ' '), default=-1) + 1
+        last = max((i for i, c in enumerate(ps) if c not in L.PUNCT and c != ' '), default=-1) + 1
         lim = torch.full_like(seg, cap)
         free = torch.tensor([i + a == last for i in range(len(seg))])
         lim = torch.where(free, new, lim)
         excess = float((new - torch.minimum(new, lim)).sum())
         new = torch.minimum(new, lim)
-        vowel = torch.tensor([ps[i + a - 1] in VOWELS if 0 < i + a <= len(ps) else False for i in range(len(seg))])
+        vowel = torch.tensor([ps[i + a - 1] in L.VOWELS if 0 < i + a <= len(ps) else False for i in range(len(seg))])
         room = torch.where(vowel, lim - new, torch.zeros_like(new)).clamp(min=0)
         if excess > 0 and float(room.sum()) > 0:
             new += room * min(1.0, excess / float(room.sum()))
         return new
 
     @staticmethod
-    def stress(f, v, st, edits, word_spans, starts, ends):
+    def stress(f, v, st, edits, word_spans, starts, ends, L):
         """Stressed words (edits with 'over'): the word's peak is lifted to `over` semitones above the peaks of
-        the words around it (at least `pitch`, at most `max`, default styles.STRESS_MAX), then eases down `fall` semitones
+        the words around it (at least `pitch`, at most `max`, default the language's STRESS_MAX), then eases down `fall` semitones
         across the word. Relative, because the model often peaks on a neighbour
         ("have you EVER wanted"), which swamps a fixed lift. Changes st in place."""
         import torch
@@ -423,63 +410,53 @@ class Engine:
             lift = o.get('pitch', 0.0)
             if mine is not None and others:
                 lift = max(lift, max(others) + o['over'] - mine)
-            lift = min(lift, o.get('max', styles.STRESS_MAX))
+            lift = min(lift, o.get('max', L.STRESS_MAX))
             t = torch.linspace(0, 1, hi - lo)
             st[lo:hi] += lift - o.get('fall', 0.0) * t
 
     @staticmethod
-    def punct_runs(ps):
+    def punct_runs(ps, L):
         """[(first, last)] char indices of each run of punctuation, with the spaces after it"""
         out, i, n = [], 0, len(ps)
         while i < n:
-            if ps[i] not in PUNCT:
+            if ps[i] not in L.PUNCT:
                 i += 1; continue
             j = i
-            while j + 1 < n and (ps[j + 1] in PUNCT or ps[j + 1] == ' '):
+            while j + 1 < n and (ps[j + 1] in L.PUNCT or ps[j + 1] == ' '):
                 j += 1
             out.append((i, j))
             i = j + 1
         return out
 
     @classmethod
-    def pause_groups(cls, ps):
+    def pause_groups(cls, ps, L):
         """mid-line runs of punctuation in a phoneme string -> [(first, last, kind)]: char indices of the run's
-        first mark and its last character (spaces included). Runs at the start or end of the string are left out."""
+        first mark and its last character (spaces included); the kind (styles.PAUSES) is the language's call.
+        Runs at the start or end of the string are left out."""
         out, n = [], len(ps)
-        for i, j in cls.punct_runs(ps):
-            run = ps[i:j + 1]
+        for i, j in cls.punct_runs(ps, L):
             if i > 0 and j + 1 < n and ps[:i].strip():
-                if '…' in run or run.count('.') >= 2:
-                    kind = 'ellipsis'
-                elif any(c in run for c in '.!?'):
-                    kind = 'sentence'
-                elif '—' in run:
-                    kind = 'dash'
-                elif any(c in run for c in ';:'):
-                    kind = 'clause'
-                else:
-                    kind = 'comma'
-                out.append((i, j, kind))
+                out.append((i, j, L.pause_kind(ps[i:j + 1])))
         return out
 
-    def length_caps(self, ps, speed):
+    def length_caps(self, ps, speed, L):
         """per id (with the leading/trailing pad) the longest a sound may last, in model frames"""
         C, fps = styles.LENGTH_CAP, 40.0                                    # 40 duration frames per second
         caps = self.torch.full((len(ps) + 2,), float('inf'))
-        last = max((i for i, c in enumerate(ps) if c not in PUNCT and c != ' '), default=-1)
+        last = max((i for i, c in enumerate(ps) if c not in L.PUNCT and c != ' '), default=-1)
         for i, c in enumerate(ps):
-            if c in PUNCT or i >= last:
+            if c in L.PUNCT or i >= last:
                 continue
             if c == ' ':
                 caps[i + 1] = C['gap'] * fps / speed
                 continue
             nxt = ps[i + 1:].lstrip(' ')
-            final = nxt[:1] in PUNCT and nxt[:1] != ''
+            final = nxt[:1] in L.PUNCT and nxt[:1] != ''
             caps[i + 1] = (C['phrase_end'] if final else C['inner']) * fps / speed
         return caps
 
     @staticmethod
-    def bridge_dips(f, ps, ids_at):
+    def bridge_dips(f, ps, ids_at, L):
         """Fill in short gaps and octave-ish drops in the predicted F0 where the sounds should be voiced.
         The model sometimes drops voicing for a syllable ("thorough" -> "thor- -ough"). A gap is filled
         (log-interpolated) only when it is short, voiced on both sides, and every sound under it is a vowel
@@ -507,20 +484,20 @@ class Engine:
             under = {ch(i) for i in ids_at[k:e + 1]} - {' '}                # word gaps don't count...
             edges = {ch(ids_at[a]), ch(ids_at[b])} if a >= 0 and b < n else {None}   # ...but the edges must be voiced
             if (e - k + 1 <= B['max_len'] and a >= 0 and b < n and v[a] and v[b] and not dip[a] and not dip[b]
-                    and under and under <= SONORANT and edges <= SONORANT | {' '}):
+                    and under and under <= L.SONORANT and edges <= L.SONORANT | {' '}):
                 t = (np.arange(k, e + 1) - a) / (b - a)
                 x[k:e + 1] = np.exp(np.log(x[a]) * (1 - t) + np.log(x[b]) * t)
                 gaps.append((a, b))
             k = e + 1
         return (f.new_tensor(x) if gaps else f), gaps
 
-    def _speak(self, tokens, word_edits, pack, rng, **kw):
+    def _speak(self, tokens, word_edits, pack, rng, L, **kw):
         """tokens -> (audio, per-sample voiced 0..1), chunked as needed"""
         audios, voiced = [], []
         with self.torch.no_grad():
             first = next((i for i, t in enumerate(tokens) if t.is_word), len(tokens))
             tokens = tokens[first:]                     # a leading "..." is voiced as a little hit; drop it
-            for chunk in self.chunks(tokens):
+            for chunk in self.chunks(tokens, L):
                 ps, spans = self.layout(chunk)
                 if not ps:
                     continue
@@ -529,7 +506,7 @@ class Engine:
                     audios.append(gap); voiced.append(np.zeros(len(gap)))
                 words = [sp for t, sp in zip(chunk, spans) if sp and t.is_word]
                 edits = {sp: word_edits[id(t)] for t, sp in zip(chunk, spans) if sp and id(t) in word_edits}
-                a, f = self._synth_chunk(ps, words, edits, pack, rng=rng, **kw)
+                a, f = self._synth_chunk(ps, words, edits, pack, rng=rng, lang=L, **kw)
                 audios.append(a)
                 voiced.append(dsp.frames_to_samples(f > VOICED_HZ, len(a)))
         if not audios:
@@ -547,26 +524,27 @@ class Engine:
         """
         d = styles.parse_direction(direction) if isinstance(direction, str) else direction
         s = styles.resolve(d)
-        mt = marks_mod.parse(text)
-        tokens = self.tokenize(mt)
+        L = self.lang
+        mt = marks_mod.parse(text, L)
+        tokens = self.tokenize(mt, L)
 
         word_edits, unplaced = {}, []
         for gi, mk in enumerate(mt.marks):
             hit = [t for t in tokens if t.span and t.is_word and t.span[0] < mk.end and t.span[1] > mk.start]
             if not hit:
                 unplaced.append(mt.plain[mk.start:mk.end]); continue
-            e = dict(styles.word_edit(mk), group=gi)     # group: the words under one mark
+            e = dict(styles.word_edit(mk, L), group=gi)     # group: the words under one mark
             for t in hit:
                 word_edits[id(t)] = e
 
-        rises = styles.question_rises(s, mt.plain)
+        rises = styles.question_rises(s, mt.plain, L)
         if any(rises):
             q = 0                                       # which question we're at
             for i, t in enumerate(tokens):
-                if '?' in t.text and not t.is_word:
+                if any(c in t.text for c in L.QUESTION_MARKS) and not t.is_word:
                     q += 1; continue
                 nxt = next((u for u in tokens[i + 1:] if u.phonemes), None)
-                if (t.is_word and nxt is not None and not nxt.is_word and '?' in nxt.text and q < len(rises)
+                if (t.is_word and nxt is not None and not nxt.is_word and any(c in nxt.text for c in L.QUESTION_MARKS) and q < len(rises)
                         and rises[q]):
                     word_edits[id(t)] = dict(word_edits.get(id(t), {}), rise=rises[q])
 
@@ -575,7 +553,7 @@ class Engine:
         rng = np.random.default_rng(line_seed)
         self.torch.manual_seed(line_seed % 2**63)          # the decoder adds noise; make it repeatable
         kw = {k: s[k] for k in ('speed', 'pitch', 'range_', 'drift', 'pause', 'floor', 'human')}
-        audio, voiced = self._speak(tokens, word_edits, pack, rng, **kw)
+        audio, voiced = self._speak(tokens, word_edits, pack, rng, L, **kw)
         if s['style'] == 'whisper' and len(audio):
             audio = dsp.whisper(audio, voiced, seed=make_seed('breath', seed, s['take']) % 2**32)
         elif s.get('breath') and len(audio):

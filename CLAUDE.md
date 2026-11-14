@@ -18,6 +18,9 @@ Kokoro TTS voice-line generator with markup. Read README.md (install, layout, mi
 - **Recipe compatibility.** Mixer axis ids (`gender`, `accent`, `pc1`…`pc8`) never change: saved
   `.recipe.json` files refer to them. Hide an axis rather than remove it. Old `voicegen_recipe` files must
   keep loading.
+- **Languages.** Language-specific rules live in `jivetalker/lang/` (one module per language, a `Language`
+  subclass); the mark syntax, script format and engine edits stay shared. English is the default, and the
+  cache key leaves the language out while it is English, so existing clips keep their keys.
 - **Seeds** use hashlib, never `hash()` (it varies per process).
 - **Stay generic and cross-platform**: no game- or story-specific names, paths or defaults; Linux and
   Windows (use `pathlib`, no shell-outs). Ogg Opus via soundfile, with a `.wav` fallback.

@@ -15,6 +15,7 @@ The bracketed text may hold several words; the mark applies to all of them.
 import re
 from dataclasses import dataclass
 
+from . import lang as languages
 from .styles import DESTRESS_LEVELS, MARK_LEVELS, PAUSE_MARKS, PAUSE_MAX, SHAPE_MAX
 
 MARK_RE = re.compile(r'\[([^\]]+)\]\(([^)]*)\)')
@@ -69,12 +70,15 @@ def parse_mark_spec(spec):
 @dataclass
 class MarkedText:
     plain: str          # what is shown on screen (markup removed)
-    g2p: str            # what is spoken (respellings kept in misaki syntax, =substitutions applied)
+    g2p: str            # what is spoken (respellings kept in misaki syntax, =substitutions applied, the
+                        # language's fix-ups done)
     marks: list         # [Mark]
     align: str = ''     # plain text with =substituted words blanked out (for matching tokens to words)
 
 
-def parse(text):
+def parse(text, lang=None):
+    """a line with word marks -> MarkedText. lang: a code or Language (default English)"""
+    L = languages.get(lang)
     plain, g2p, align, marks, pos = [], [], [], [], 0
     n = 0                                  # length of plain so far
     for m in MARK_RE.finditer(text):
@@ -89,16 +93,14 @@ def parse(text):
             mk = Mark(n, n + len(word), **parse_mark_spec(spec))
             g2p.append(word)
             # a pause needs a mark the model can hold: a comma, spoken only (unless punctuation follows anyway)
-            if (mk.pause or mk.pause_s) and not re.match(r'\s*[,.;:!?…—–]', text[m.end():]):
-                g2p.append(',')
+            if (mk.pause or mk.pause_s) and not L.has_pause_after(text[m.end():]):
+                g2p.append(L.PAUSE_MARK)
             marks.append(mk)
         plain.append(word); n += len(word)
         align.append(' ' * len(word) if spec.startswith('=') else word)
         pos = m.end()
     plain.append(text[pos:]); g2p.append(text[pos:]); align.append(text[pos:])
-    # misaki drops a spaced hyphen ("eyes - easy") without a pause; an en/em dash it reads as one
-    spoken = re.sub(r'(?<=\s)-+(?=\s)', '—', ''.join(g2p))
-    return MarkedText(''.join(plain), spoken, marks, ''.join(align))
+    return MarkedText(''.join(plain), L.spoken(''.join(g2p)), marks, ''.join(align))
 
 
 def apply_pronounce(text, table):

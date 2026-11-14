@@ -16,7 +16,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from . import ENGINE_VERSION, marks as marks_mod, styles
+from . import ENGINE_VERSION, lang as languages, marks as marks_mod, styles
 from .common import STOCK_PREFIXES
 
 MANIFEST = 'manifest.json'
@@ -46,17 +46,19 @@ def file_hash(path):
     return _file_hashes[k]
 
 
-def tuning(job, settings):
-    """the tuning constants this line depends on (so tuning one style only rebuilds the lines using it)"""
+def tuning(job, settings, lang=None):
+    """the tuning constants this line depends on (so tuning one style only rebuilds the lines using it).
+    lang: the line's language (default English)"""
     from . import dsp, engine
+    L = languages.get(lang)
     t = {'level': [dsp.LEVEL_TARGET, dsp.PEAK_LIMIT], 'voiced': engine.VOICED_HZ,
          'timing': [styles.PAUSES, styles.PAUSE_HUMAN, styles.LENGTH_CAP, styles.PITCH_BRIDGE, styles.QUIET_ENERGY, styles.QUIET_EASE]}
-    mt = marks_mod.parse(job.text)
+    mt = marks_mod.parse(job.text, L)
     if mt.marks:                                # only the mark levels this line uses
         stress = sorted({m.stress for m in mt.marks if m.stress})
         stretch = sorted({m.stretch for m in mt.marks if m.stretch})
         if stress:
-            t['stress'] = [{k: styles.STRESS.get(k) or styles.STRESS_MORE[k] for k in stress}, styles.STRESS_MAX]
+            t['stress'] = [{k: L.STRESS.get(k) or L.STRESS_MORE[k] for k in stress}, L.STRESS_MAX]
         if stretch:
             t['stretch'] = [{k: styles.STRETCH.get(k) or styles.STRETCH_MORE[k] for k in stretch},
                             styles.STRETCH_CAP, styles.SUSTAIN_ENERGY, styles.SUSTAIN_SMOOTH]
@@ -64,8 +66,8 @@ def tuning(job, settings):
             t['pause_marks'] = styles.PAUSE_MARKS
         if any(m.shape for m in mt.marks):
             t['shape'] = styles.SHAPE_SOFTEN
-    if any(styles.question_rises(settings, mt.plain)):
-        t['question'] = styles.QUESTION
+    if any(L.question_rises(settings, mt.plain)):
+        t['question'] = L.QUESTION
     if 'internal' in settings['effects']:
         t['internal'] = dsp.INTERNAL
     if 'muffled' in settings['effects']:

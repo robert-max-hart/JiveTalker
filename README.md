@@ -109,7 +109,7 @@ jivetalker voice build voices/mara.recipe.json -o m.pt  # rebuild a .pt from a r
 - Recipes written before the rename (marked `voicegen_recipe`) still load.
 
 Layout: `engine.py` (the model with duration/pitch editing), `styles.py` (styles and how directions
-resolve), `marks.py` (word marks), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
+resolve), `marks.py` (word marks), `lang/` (what depends on the language: the phonemizer, phoneme classes, pauses, stress and question rules; only English, `lang/en.py`, so far), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
 (the voice script), `render.py` (caching and the manifest), `voicelab.py` (recipes and axes), `mixer.py` +
 `mixer.html` (the voice mixer), `toolkit.py` + `toolkit.html` (the page with both tabs, and the script editor), `cli.py`.
 

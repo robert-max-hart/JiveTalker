@@ -21,7 +21,7 @@ dependencies = [
 jivetalker = "jivetalker.cli:main"
 
 [tool.setuptools]
-packages = ["jivetalker"]
+packages = ["jivetalker", "jivetalker.lang"]
 
 [tool.setuptools.package-data]
 jivetalker = ["mixer.html", "toolkit.html"]

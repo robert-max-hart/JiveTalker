@@ -5,8 +5,10 @@ Resolution order: DEFAULTS -> the style -> the line's own settings.
   (so `{deep, speed 0.9}` = 0.9 x 0.75).
 - `pitch` and `volume` in a direction add to the style's; every other setting replaces the style's value.
 """
-import re
 from dataclasses import dataclass, field
+
+from . import lang as languages
+from .lang.en import ENGLISH as _en
 
 DEFAULTS = dict(speed=0.95, pitch=0.0, range_=1.0, drift=0.0, pause=1.0, floor=0.0, human=1.0,
                 volume=0.0, take=0)
@@ -36,26 +38,13 @@ STYLE_LEVEL_DB = {'soft': -8.0, 'whisper': -12.0}    # ear-weighted, relative to
 EFFECTS = ('internal', 'muffled')                    # post effects that combine with any style (applied in order)
 
 # ---- word marks -> per-word edits
-# Stress is relative: the word's peak is lifted to `over` semitones above the peaks of the words around it
-# (at least `pitch`, at most STRESS_MAX), then eases down `fall` semitones across the word; `gain` dB louder;
-# `dur` = length factor. (2026-11-12 round 1: a flat +1.5 st was inaudible on "have you ever WANTED", where
-# the model already peaks on "ever"; ++ on "finally" was too high and didn't ease down enough; round 2: ++
-# start lower and end below the unstressed "finally" before it.)
-STRESS = {1: dict(over=1.5, pitch=1.5, fall=2.0, gain=2.0, dur=1.15),
-          2: dict(over=2.0, pitch=2.0, fall=4.0, gain=3.0, dur=1.25),
-          -1: dict(pitch=-1.0, dur=0.9, gain=-1.5)}
-STRESS_MAX = 6.0
+# What stress (+ / -) does depends on the language: see lang/ (English: lang/en.py). These names are the
+# English tables, kept for older code.
+STRESS, STRESS_MORE, STRESS_MAX = _en.STRESS, _en.STRESS_MORE, _en.STRESS_MAX
 STRETCH = {1: 1.25, 2: 1.5}     # 2026-11-13: was 1.5 / 2.0 (too long); every level now adds 0.25 up to ~~~~
-# Levels 3-5 (+++ to +++++, ~~~ to ~~~~~) and de-stress -- / ---, for when ++ / ~~ / - isn't enough. Untuned by ear: they may sound bad.
-# Each also raises its own limit (stress `max` instead of STRESS_MAX; stretch `cap` instead of STRETCH_CAP),
-# or the limits would flatten them into level 2. A line's clip depends only on the levels it uses
-# (render.tuning), so tuning one level rebuilds only the lines that use it.
-STRESS_MORE = {3: dict(over=3.0, pitch=3.0, fall=5.0, gain=4.0, dur=1.35, max=7.5),
-               4: dict(over=4.0, pitch=4.0, fall=6.0, gain=5.0, dur=1.45, max=9.0),
-               5: dict(over=5.0, pitch=5.0, fall=7.0, gain=6.0, dur=1.55, max=10.5),
-               # -- and ---: stops at 3, as past ~20% shorter Kokoro swallows sounds and quieter words get lost
-               -2: dict(pitch=-2.0, dur=0.85, gain=-3.0),
-               -3: dict(pitch=-3.0, dur=0.8, gain=-4.5)}
+# Levels 3-5 (~~~ to ~~~~~), for when ~~ isn't enough. Untuned by ear: they may sound bad. Each also raises
+# its own limit (`cap` instead of STRETCH_CAP), or the limit would flatten it into level 2. A line's clip
+# depends only on the levels it uses (render.tuning), so tuning one level rebuilds only the lines that use it.
 STRETCH_MORE = {3: dict(factor=1.75, cap=0.5), 4: dict(factor=2.0, cap=0.65), 5: dict(factor=2.5, cap=0.8)}
 MARK_LEVELS = 5         # most + or ~ a mark may stack
 DESTRESS_LEVELS = 3     # most - a mark may stack
@@ -71,11 +60,11 @@ PAUSE_MARKS = {n: round(0.2 * n, 2) for n in range(1, 6)}
 PAUSE_MAX = 5.0
 
 
-def word_edit(mark):
+def word_edit(mark, lang=None):
     """a word Mark -> the engine's per-word edit: {'over', 'pitch', 'fall', 'gain', 'dur', 'max', 'sustain',
-    'cap', 'shape', 'pause_after', 'pause_exact'} (only what applies)"""
+    'cap', 'shape', 'pause_after', 'pause_exact'} (only what applies). lang: a code or Language (default English)"""
     stress, stretch = mark.stress, mark.stretch
-    e = dict(STRESS.get(stress) or STRESS_MORE.get(stress) or {})
+    e = languages.get(lang).stress(stress)
     if stretch:
         more = STRETCH_MORE.get(stretch)
         e['dur'] = e.get('dur', 1.0) * (more['factor'] if more else STRETCH[stretch])
@@ -116,14 +105,8 @@ LENGTH_CAP = dict(inner=0.30, phrase_end=0.50, gap=0.15)
 # voiced on both sides and only over vowels/sonorants, are filled in.
 PITCH_BRIDGE = dict(ratio=0.7, win=12, max_len=24)
 
-# ---- question rise: Kokoro says "Mara?" like a statement (a peak on the stressed syllable, then a fall), so the
-# word before a "?" gets its own contour flattened and a rise laid on top: gradual at first, then sharp.
-# auto: semitones used on one-word questions when the line doesn't set `rise`; flatten: 0..1, how much of the
-# model's own movement on that word is removed; gradual: the share of the rise that is linear (the rest
-# comes as t**power, i.e. at the end).
-# auto_multi: semitones on longer questions without a wh-word at the start of a clause (round 1: "Maybe... back
-# when I was a kid?" was said as a statement).
-QUESTION = dict(auto=5.0, auto_multi=3.0, flatten=0.9, gradual=0.3, power=4.0)
+# ---- question rise: which questions rise and by how much depends on the language (lang/; English: lang/en.py).
+QUESTION = _en.QUESTION     # the English tuning, kept for older code
 
 SETTING_NAMES = {'speed': 'speed', 'pitch': 'pitch', 'range': 'range_', 'drift': 'drift', 'pause': 'pause',
                  'floor': 'floor', 'human': 'human', 'volume': 'volume', 'take': 'take', 'rise': 'rise',
@@ -209,25 +192,7 @@ def resolve(direction):
     return s
 
 
-WH_WORDS = {'who', 'whom', 'whose', 'what', 'when', 'where', 'why', 'how', 'which'}
-WORD_RE = re.compile(r"[^\W\d_][\w'’-]*")
-
-
-def question_rises(settings, plain):
-    """semitones of rise for each question ("?" run) in the line, in order. The line's `rise` applies to all.
-    Otherwise: a one-word question gets QUESTION['auto']; a longer one QUESTION['auto_multi'], unless one of its
-    clauses starts with a wh-word ("So Mara, when was...?"), since those fall. (`rise` is not in DEFAULTS,
-    so lines without it keep their cache keys.)"""
-    out, start = [], 0
-    for m in re.finditer(r'\?+', plain):
-        if 'rise' in settings:
-            out.append(settings['rise'])
-        else:
-            sentence = re.split(r'[.!?…]+(?=\s|$)', plain[start:m.start()])[-1]
-            words = WORD_RE.findall(sentence)
-            clauses = re.split(r'[,;:—–…]|\.\.\.|\s-+\s', sentence)
-            firsts = {w[0].lower() for w in (WORD_RE.findall(c) for c in clauses) if w}
-            out.append(0.0 if not words else QUESTION['auto'] if len(words) == 1 else
-                       0.0 if firsts & WH_WORDS else QUESTION['auto_multi'])
-        start = m.end()
-    return out
+def question_rises(settings, plain, lang=None):
+    """semitones of rise for each question in the line, in order; the line's `rise` setting applies to all.
+    lang: a code or Language (default English), which decides the rest"""
+    return languages.get(lang).question_rises(settings, plain)
