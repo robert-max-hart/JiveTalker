@@ -92,6 +92,8 @@ pre.recipe { font: 11px/1.4 var(--mono); background: var(--bg); border: 1px soli
 .warnline { color: var(--warn); font-size: 12px }
 details summary { cursor: pointer; color: var(--muted); font-size: 12px }
 kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px }
+/* inside the toolkit's Voices tab: the toolkit bar already names it */
+.embed h1 { display: none }
 </style>
 </head>
 <body>
@@ -172,6 +174,9 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
 
 <script>
 const $ = s => document.querySelector(s);
+const EMBEDDED = window.parent !== window;
+if (EMBEDDED) document.documentElement.classList.add('embed');
+function tellParent(msg) { if (EMBEDDED) window.parent.postMessage(Object.assign({jivetalker: msg.type}, msg), location.origin); }
 const HALVES = ['timbre', 'delivery'];
 let info = null;
 let recipe = blank();
@@ -406,6 +411,7 @@ async function save(overwrite) {
   }
   msg.innerHTML = `<div class="hint" style="color:var(--ok)">Saved ${res.path} and its recipe${res.backup ? `; old file kept as ${res.backup}` : ''}.</div>`;
   info.sources = res.sources;
+  tellParent({type: 'saved', name: $('#saveName').value.trim().replace(/\.pt$/, '')});
   for (const s of ['#loadSel', '#cmpSel', '#add-timbre', '#add-delivery']) fillSourceSelect($(s), true);
 }
 $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
@@ -429,6 +435,18 @@ $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
     const first = Object.keys(info.sources.user)[0];
     if (first) { $('#loadSel').value = first; $('#cmpSel').value = first; $('#loadBtn').click(); }
     else { recipe.timbre.mix.af_heart = 1; recipe.delivery.mix.af_heart = 1; changed(); status('Ready.'); }
+    // the Script tab can ask for a voice (and a line to try it on)
+    window.addEventListener('message', e => {
+      const d = e.data;
+      if (e.origin !== location.origin || !d || d.jivetalker !== 'load') return;
+      if (d.text != null) { $('#text').value = d.text; $('#dir').value = d.direction || ''; if (info.lines.length) $('#lineSel').value = ''; }
+      if (d.source && [...$('#loadSel').options].some(o => o.value === d.source)) {
+        $('#loadSel').value = d.source; $('#cmpSel').value = d.source;
+        if (info.sources.user[d.source]) $('#saveName').value = d.source;
+        $('#loadBtn').click();
+      }
+    });
+    tellParent({type: 'ready'});
   } catch (e) { status('Could not reach the mixer: ' + e.message, true); }
 })();
 </script>

@@ -4,6 +4,7 @@
     jivetalker preview --script voice_script.txt --line c1.e174 -o x.ogg
     jivetalker check voice_script.txt
     jivetalker render voice_script.txt --out voice/ [--dry-run] [--only "c1.e1*"] [--prune]
+    jivetalker edit voice_script.txt                  edit a script in the browser (Script + Voices tabs)
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
     jivetalker voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
     jivetalker voice build voices/mara.recipe.json   rebuild a .pt from its recipe
@@ -90,11 +91,30 @@ def cmd_render(a):
     print(f'clips: {out}')
 
 
+def start_toolkit(a, script, start):
+    from .mixer import Mixer
+    from .toolkit import ScriptDoc, Toolkit, serve
+    dirs = list(a.voices_dir or [])
+    doc = None
+    if script:
+        if not Path(script).is_file():
+            sys.exit(f'jivetalker: no such script: {script}')
+        from .script import Script
+        own = Script.load(script).voices_dir()        # the script's own @voices folder comes first
+        if own.is_dir() and own.resolve() not in [Path(d).resolve() for d in dirs]:
+            dirs.insert(0, str(own))
+    m = Mixer(dirs, a.save_dir or (dirs[0] if dirs else None), script, a.model_dir)
+    if script:
+        doc = ScriptDoc(script, None, getattr(a, 'out', None), getattr(a, 'format', None) or 'ogg', m.source_for)
+    serve(Toolkit(m, doc, start), a.port, not a.no_browser)
+
+
 def cmd_mixer(a):
-    from .mixer import Mixer, serve
-    dirs = a.voices_dir or []
-    m = Mixer(dirs, a.save_dir or (dirs[0] if dirs else None), a.script, a.model_dir)
-    serve(m, a.port, not a.no_browser)
+    start_toolkit(a, a.script, 'voices')
+
+
+def cmd_edit(a):
+    start_toolkit(a, a.script, 'script')
 
 
 def cmd_voice(a):
@@ -165,6 +185,16 @@ def main(argv=None):
     mx.add_argument('--port', type=int, default=8765)
     mx.add_argument('--no-browser', action='store_true')
     mx.set_defaults(func=cmd_mixer)
+    ed = sub.add_parser('edit', help='edit a voice script in the browser (with the voice mixer in another tab)')
+    ed.add_argument('script')
+    ed.add_argument('--voices-dir', action='append', help='more folders of .pt voices for the mixer (repeatable; '
+                                                          'the script\'s @voices folder is always included)')
+    ed.add_argument('--save-dir', help='where the mixer saves (default: the script\'s @voices folder)')
+    ed.add_argument('--out', help='clip folder for Render (default: voice/ next to the script)')
+    ed.add_argument('--format', default='ogg', choices=('ogg', 'wav', 'flac'))
+    ed.add_argument('--port', type=int, default=8765)
+    ed.add_argument('--no-browser', action='store_true')
+    ed.set_defaults(func=cmd_edit)
     vo = sub.add_parser('voice', help='voice recipes: recover one from a .pt, or build a .pt from one')
     vo.add_argument('action', choices=('recipe', 'build'))
     vo.add_argument('file', help='recipe: a .pt file; build: a .recipe.json file')

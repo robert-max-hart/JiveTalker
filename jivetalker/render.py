@@ -39,9 +39,11 @@ def file_hash(path):
     p = str(path)
     if p.startswith(STOCK_PREFIXES) and not Path(p).suffix:
         return 'stock:' + p
-    if p not in _file_hashes:
-        _file_hashes[p] = hashlib.sha256(Path(p).read_bytes()).hexdigest()
-    return _file_hashes[p]
+    st = Path(p).stat()             # keyed by size and time too: a long-running editor sees a re-saved voice
+    k = (p, st.st_size, st.st_mtime_ns)
+    if k not in _file_hashes:
+        _file_hashes[k] = hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    return _file_hashes[k]
 
 
 def tuning(job, settings):
@@ -125,27 +127,18 @@ def select(jobs, only):
     return [j for j in jobs if any(fnmatch.fnmatchcase(j.id, p) for p in pats)]
 
 
-def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_dir=None, log=print):
-    """Render `jobs` (from Script.jobs) into folder `out`. Returns a summary dict.
-    Safe to interrupt: the manifest is saved after every clip."""
-    from .engine import resolve_format
+def make_plan(jobs, out, fmt):
+    """[(job, key, action, source file)]: action is 'cached' (its clip is there), 'reuse' (a clip with the same
+    key is there under another name) or 'render'"""
     out = Path(out)
-    fmt = resolve_format(fmt, warn=log)
-    manifest = load_manifest(out) if out.exists() else {'jivetalker': 1, 'clips': {}}
-    old = manifest['clips']
-    chosen = select(jobs, only)
-    chosen_ids = {j.id for j in chosen}
-
-    # what's on disk, by key
     on_disk = {}
     if out.exists():
         for f in out.iterdir():
             m = CLIP_RE.match(f.name)
             if m and m.group(3) == fmt:
                 on_disk.setdefault(m.group(2), f)
-
-    plan = []                                   # (job, key, action, source file)
-    for j in chosen:
+    plan = []
+    for j in jobs:
         key = cache_key(j)
         want = clip_name(j.id, key, fmt)
         if (out / want).exists():
@@ -154,6 +147,20 @@ def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_di
             plan.append((j, key, 'reuse', on_disk[key[:10]]))
         else:
             plan.append((j, key, 'render', None))
+    return plan
+
+
+def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_dir=None, log=print, engine=None):
+    """Render `jobs` (from Script.jobs) into folder `out`. Returns a summary dict.
+    Safe to interrupt: the manifest is saved after every clip. `engine`: an Engine to use instead of loading one."""
+    from .engine import resolve_format
+    out = Path(out)
+    fmt = resolve_format(fmt, warn=log)
+    manifest = load_manifest(out) if out.exists() else {'jivetalker': 1, 'clips': {}}
+    old = manifest['clips']
+    chosen = select(jobs, only)
+    chosen_ids = {j.id for j in chosen}
+    plan = make_plan(chosen, out, fmt)
 
     todo = [p for p in plan if p[2] == 'render']
     est = sum(estimate_seconds(p[0]) for p in todo)
@@ -201,8 +208,9 @@ def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_di
     if todo:
         from .engine import Engine, write
         t0 = time.time()
-        eng = Engine(model_dir=model_dir)
-        log(f'model loaded in {time.time() - t0:.0f} s; rendering {len(todo)} clips (~{est / 60:.1f} min of audio)')
+        eng = engine or Engine(model_dir=model_dir)
+        log((f'model loaded in {time.time() - t0:.0f} s; ' if not engine else '') +
+            f'rendering {len(todo)} clips (~{est / 60:.1f} min of audio)')
         done_audio = 0.0
         try:
             for n, (j, key, _, _) in enumerate(todo, 1):

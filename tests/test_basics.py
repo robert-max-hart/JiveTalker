@@ -118,7 +118,44 @@ class Files(unittest.TestCase):
         self.assertIn('jivetalker_recipe', voicelab.clean({}))
 
 
-GOLDEN_KEY = "871ac1f61f37b41a38624d547580d285de26851030d7ac1c8e93c66eb9175ae9"
+class Editor(unittest.TestCase):
+    """the toolkit's Script tab: line rewrites and file edits (no model needed)"""
+
+    def test_rewrite_keeps_layout(self):
+        from jivetalker.toolkit import rewrite_line
+        raw = 'c1.e10   Mara: Close your [eyes](+~)...'
+        self.assertEqual(rewrite_line(raw, text='Close your eyes...'), 'c1.e10   Mara: Close your eyes...')
+        self.assertEqual(rewrite_line(raw, direction='trance 0.6, take 2'),
+                         'c1.e10   Mara {trance 0.6, take 2}: Close your [eyes](+~)...')
+        self.assertEqual(rewrite_line('c1.e20   !changed Mara {deep}: yes', flags=[], direction=''), 'c1.e20   Mara: yes')
+        self.assertEqual(rewrite_line('c1.e4    ??? {whisper}: Who?', flags=['check']), 'c1.e4    !check ??? {whisper}: Who?')
+        for bad in (dict(direction='a}b'), dict(text='two\nlines'), dict(flags=['no spaces'])):
+            with self.assertRaises(ValueError, msg=bad):
+                rewrite_line(raw, **bad)
+
+    def test_edits_and_conflicts(self):
+        from jivetalker.toolkit import Conflict, ScriptDoc
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'voice_script.txt'
+            p.write_bytes(SCRIPT.replace('\n', '\r\n').encode('utf-8'))     # Windows line endings survive
+            doc = ScriptDoc(p)
+            m = doc.model()
+            self.assertEqual((m['summary']['lines'], m['summary']['errors']), (8, 0))
+            line = next(i for i in m['items'] if i.get('id') == 'c1.e11')
+            self.assertEqual(line['ramp']['value'], None)               # the ramp is Mara's, not the narrator's
+            e10 = next(i for i in m['items'] if i.get('id') == 'c1.e10')
+            self.assertEqual((e10['style'], e10['style_src']), ('trance', '@ramp'))
+            m2 = doc.edit({'base': m['version'], 'lineno': e10['lineno'], 'expect': e10['raw'],
+                           'text': 'Close your [eyes](++|)...'})
+            self.assertIn('c1.e10   Mara: Close your [eyes](++|)...\r\n', p.read_bytes().decode('utf-8'))
+            self.assertTrue((Path(d) / 'voice_script.txt.bak').exists())
+            with self.assertRaises(Conflict):                           # made on the old version
+                doc.edit({'base': m['version'], 'lineno': e10['lineno'], 'expect': e10['raw'], 'text': 'x'})
+            doc.save_text({'base': m2['version'], 'text': SCRIPT})
+            self.assertEqual(p.read_bytes().decode('utf-8'), SCRIPT.replace('\n', '\r\n'))
+
+
+GOLDEN_KEY ="871ac1f61f37b41a38624d547580d285de26851030d7ac1c8e93c66eb9175ae9"
 
 if __name__ == '__main__':
     unittest.main()

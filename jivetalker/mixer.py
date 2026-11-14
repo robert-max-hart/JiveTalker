@@ -1,18 +1,16 @@
-"""jivetalker mixer: a local web page for blending and tuning voice packs by ear.
+"""The voice mixer behind the toolkit's Voices tab: blending and tuning voice packs by ear.
 
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt] [--port 8765]
 
-Serves on 127.0.0.1 only. Saving writes <name>.pt and <name>.recipe.json to --save-dir (default: the first
---voices-dir); an existing file is kept as <name>.pt.bak-<time> before it is replaced.
+The page and server live in toolkit.py (this module is the mixer's API). Saving writes <name>.pt and
+<name>.recipe.json to --save-dir (default: the first --voices-dir); an existing file is kept as
+<name>.pt.bak-<time> before it is replaced.
 """
 import base64
 import io
-import json
 import re
 import threading
 import time
-import webbrowser
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import voicelab
@@ -22,20 +20,38 @@ NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')
 
 
 class Mixer:
-    def __init__(self, voices_dirs, save_dir, script=None, model_dir=None):
-        from .engine import Engine
-        print('jivetalker mixer: loading Kokoro...')
-        self.eng = Engine(model_dir=model_dir)
+    def __init__(self, voices_dirs, save_dir, script=None, model_dir=None, engine=None, lock=None):
+        """engine/lock: share an Engine (and the lock that guards it, as it is not thread-safe) with other tools"""
+        if engine is None:
+            from .engine import Engine
+            print('jivetalker: loading Kokoro...')
+            engine = Engine(model_dir=model_dir)
+        self.eng = engine
         self.lab = voicelab.Lab(self.eng, voices_dirs)
         self.lab.axes()
         self.save_dir = Path(save_dir) if save_dir else None
-        self.lock = threading.Lock()                     # the engine is not thread-safe
-        self.lines = []
-        if script:
-            from .script import Script
-            jobs, _ = Script.load(script).jobs(voices_dirs[0] if voices_dirs else None)
-            self.lines = [{'id': j.id, 'speaker': j.speaker, 'direction': str(j.direction), 'text': j.text}
-                          for j in jobs]
+        self.lock = lock or threading.Lock()
+        self.script = script
+        self.script_voices = voices_dirs[0] if voices_dirs else None
+
+    @property
+    def lines(self):
+        """the script's lines as test text (read afresh, so edits made in the Script tab show up)"""
+        if not self.script:
+            return []
+        from .script import Script
+        jobs, _ = Script.load(self.script).jobs(self.script_voices)
+        return [{'id': j.id, 'speaker': j.speaker, 'direction': str(j.direction), 'text': j.text} for j in jobs]
+
+    def source_for(self, voice_path):
+        """the mixer's name for a voice (a stock name, or a .pt file in the voices folders), or None"""
+        if voice_path in self.lab.stock:
+            return voice_path
+        try:
+            want = Path(voice_path).resolve()
+        except OSError:
+            return None
+        return next((n for n, p in self.lab.user.items() if Path(p) == want), None)
 
     # ------------------------------------------------------------------ API
     def info(self, _):
@@ -103,56 +119,3 @@ class Mixer:
         return {'path': str(pt), 'backup': str(backup) if backup else None, 'sources': self.lab.sources()}
 
 
-def serve(mixer, port=8765, open_browser=True):
-    routes = {'/api/info': mixer.info, '/api/load': mixer.load, '/api/render': mixer.render,
-              '/api/position': mixer.position, '/api/variants': mixer.variants, '/api/save': mixer.save}
-
-    class H(BaseHTTPRequestHandler):
-        def log_message(self, *a):
-            pass
-
-        def send(self, code, body, ctype):
-            self.send_response(code)
-            self.send_header('Content-Type', ctype)
-            self.send_header('Content-Length', str(len(body)))
-            self.send_header('Cache-Control', 'no-store')
-            self.end_headers()
-            self.wfile.write(body)
-
-        def do_GET(self):
-            if self.path in ('/', '/index.html'):
-                self.send(200, PAGE.read_bytes(), 'text/html; charset=utf-8')
-            elif self.path == '/api/info':
-                self.api(mixer.info, {})
-            else:
-                self.send(404, b'not found', 'text/plain')
-
-        def do_POST(self):
-            fn = routes.get(self.path)
-            if not fn:
-                return self.send(404, b'not found', 'text/plain')
-            n = int(self.headers.get('Content-Length') or 0)
-            try:
-                q = json.loads(self.rfile.read(n) or b'{}')
-            except ValueError:
-                return self.send(400, b'bad json', 'text/plain')
-            self.api(fn, q)
-
-        def api(self, fn, q):
-            try:
-                out, code = fn(q), 200
-            except (ValueError, KeyError, FileNotFoundError, RuntimeError) as e:
-                out, code = {'error': str(e)}, 400
-            self.send(code, json.dumps(out).encode('utf-8'), 'application/json')
-
-    httpd = ThreadingHTTPServer(('127.0.0.1', port), H)
-    url = f'http://127.0.0.1:{port}/'
-    print(f'jivetalker mixer: {url}  (Ctrl+C to stop)')
-    if open_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print()
-    finally:
-        httpd.server_close()

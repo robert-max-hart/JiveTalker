@@ -205,6 +205,27 @@ class Script:
             p = self.voices_dir(voices_dir) / p
         return str(p)
 
+    def ramp_speaker(self, r):
+        """the cast name a ramp applies to: its `for` speaker, else the speaker of its first line"""
+        if r.speaker:
+            return self.aliases.get(r.speaker, r.speaker)
+        return self.aliases.get(r.lines[0].speaker) if r.lines else None
+
+    def ramp_info(self):
+        """{id(line): (ramp, value, Direction)} for every line inside a ramp. value and Direction are None for
+        lines of other speakers, which the ramp leaves alone."""
+        out = {}
+        for r in self.ramps:
+            who = self.ramp_speaker(r)
+            mine = [ln for ln in r.lines if self.aliases.get(ln.speaker) == who]
+            for ln in r.lines:
+                out[id(ln)] = (r, None, None)
+            for i, ln in enumerate(mine):
+                v = r.a + (r.b - r.a) * (i / (len(mine) - 1) if len(mine) > 1 else 0.0)
+                out[id(ln)] = (r, v, styles.Direction(style='trance', depth=v) if r.what == 'trance'
+                               else styles.Direction(settings={styles.SETTING_NAMES[r.what]: v}))
+        return out
+
     def jobs(self, voices_dir=None):
         """-> ([Job], [(lineno, error)]); every problem is reported, not just the first"""
         errors = list(self.errors)
@@ -222,15 +243,7 @@ class Script:
             if not vp.startswith(STOCK_PREFIXES) and not Path(vp).exists():
                 errors.append((0, f'@cast {c.name}: voice file not found: {vp}'))
 
-        ramp_dirs = {}
-        for r in self.ramps:
-            who = self.aliases.get(r.speaker, r.speaker) if r.speaker else \
-                (self.aliases.get(r.lines[0].speaker) if r.lines else None)
-            mine = [ln for ln in r.lines if self.aliases.get(ln.speaker) == who]
-            for i, ln in enumerate(mine):
-                v = r.a + (r.b - r.a) * (i / (len(mine) - 1) if len(mine) > 1 else 0.0)
-                ramp_dirs[id(ln)] = (styles.Direction(style='trance', depth=v) if r.what == 'trance'
-                                     else styles.Direction(settings={styles.SETTING_NAMES[r.what]: v}))
+        ramp_dirs = {k: d for k, (_, _, d) in self.ramp_info().items() if d is not None}
 
         jobs, seen_ids, occurrences = [], set(), {}
         for ln in self.lines:

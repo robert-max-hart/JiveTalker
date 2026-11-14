@@ -24,4 +24,4 @@ jivetalker = "jivetalker.cli:main"
 packages = ["jivetalker"]
 
 [tool.setuptools.package-data]
-jivetalker = ["mixer.html"]
+jivetalker = ["mixer.html", "toolkit.html"]

@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JiveTalker</title>
+<style>
+/* The toolkit: a bar with one tab per tool. Script = a three-column editor (cast/outline/check | the lines |
+   the inspector for the selected word and line); Voices = the mixer page in a frame. */
+:root {
+  --bg: #f3f4f7; --panel: #ffffff; --line: #d9dce4; --fg: #1d2230; --muted: #5d6476; --hover: #f7f8fb;
+  --accent: #3a5bd9; --accent-soft: #e3e9fb; --accent-ink: #2c47b3; --on-accent: #ffffff;
+  --warn: #a8461a; --warn-soft: #fbeadf; --ok: #2f7d4f; --ok-soft: #e1f2e7;
+  --delivery: #8a3fb3; --delivery-soft: #f1e6f8; --sel-bg: #f5f7ff;
+  --s0: #0f766e; --s1: #8a3fb3; --s2: #b4521e; --s3: #2c6db3; --s4: #5b6275; --s5: #a1366b;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #14161c; --panel: #1c1f27; --line: #30343f; --fg: #e3e6ee; --muted: #9aa1b2; --hover: #20242d;
+  --accent: #7f9bff; --accent-soft: #263055; --accent-ink: #b6c6ff; --on-accent: #10131a;
+  --warn: #f0925a; --warn-soft: #3a2518; --ok: #6cc690; --ok-soft: #1b3326;
+  --delivery: #cc8cf0; --delivery-soft: #33233f; --sel-bg: #1f2433;
+  --s0: #4fc7b8; --s1: #cc8cf0; --s2: #f0925a; --s3: #7fb2f0; --s4: #a3aabb; --s5: #f08cbf; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #14161c; --panel: #1c1f27; --line: #30343f; --fg: #e3e6ee; --muted: #9aa1b2; --hover: #20242d;
+  --accent: #7f9bff; --accent-soft: #263055; --accent-ink: #b6c6ff; --on-accent: #10131a;
+  --warn: #f0925a; --warn-soft: #3a2518; --ok: #6cc690; --ok-soft: #1b3326;
+  --delivery: #cc8cf0; --delivery-soft: #33233f; --sel-bg: #1f2433;
+  --s0: #4fc7b8; --s1: #cc8cf0; --s2: #f0925a; --s3: #7fb2f0; --s4: #a3aabb; --s5: #f08cbf; color-scheme: dark }
+* { box-sizing: border-box }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font) }
+button, select, input, textarea { font: inherit; color: inherit }
+button { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 5px 11px; cursor: pointer; min-height: 32px }
+button:hover:not(:disabled) { border-color: var(--accent) }
+button:disabled { opacity: .5; cursor: default }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600 }
+button.small { min-height: 26px; padding: 1px 8px; font-size: 12px }
+button.plain { border: 0; background: transparent; min-height: 0; padding: 2px 4px }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+input[type=text], input[type=number], select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0 }
+input[type=range] { width: 100%; accent-color: var(--accent); min-width: 0 }
+.mono { font-family: var(--mono) }
+.hint { color: var(--muted); font-size: 12.5px }
+.lab { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+.grow { flex: 1 1 0 }
+.chip { display: inline-flex; align-items: center; gap: 4px; font: 500 12px var(--mono); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; min-height: 0; background: transparent }
+.chip.inh { border-style: dashed; color: var(--muted) }
+.chip.st { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent }
+.chip.fx { background: var(--delivery-soft); color: var(--delivery); border-color: transparent }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent }
+.chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px }
+kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--panel) }
+[hidden] { display: none !important }
+
+/* bar */
+.bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0 18px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5 }
+.brand { display: flex; align-items: center; gap: 10px; padding: 10px 0 }
+.brand b { font-size: 16px }
+.tabs { display: flex; gap: 2px }
+.tabs button { border: 0; border-radius: 0; background: transparent; padding: 0 14px; min-height: 50px; display: flex; flex-direction: column; justify-content: center; color: var(--muted) }
+.tabs button[aria-selected=true] { color: var(--fg); box-shadow: inset 0 -3px 0 var(--accent) }
+.tabs button b { font-size: 14px }
+.tabs button small { font: 11px var(--mono); color: var(--muted) }
+.barright { display: flex; align-items: center; gap: 10px; padding: 8px 0; flex-wrap: wrap }
+
+/* script tab */
+.subbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 16px 0 }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel) }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); background: transparent; padding: 4px 6px; min-height: 36px; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0 }
+.seg button:last-child { border-right: 0 }
+.seg button:hover { background: var(--accent-soft) }
+.seg button.on { background: var(--accent); color: var(--on-accent) }
+.seg button .c { font: 600 12.5px var(--mono) }
+.seg button .s { font-size: 10px; opacity: .75 }
+.work { display: grid; grid-template-columns: 250px minmax(0, 1fr) 370px; gap: 16px; padding: 14px 16px 40px; align-items: start }
+.work.collapsed { grid-template-columns: 250px minmax(0, 1fr) 52px }
+.side, .insp { position: sticky; top: 64px; max-height: calc(100vh - 76px); overflow: auto; display: flex; flex-direction: column; gap: 12px; min-width: 0 }
+@media (max-width: 1180px) {
+  .work { grid-template-columns: minmax(0, 1fr) 340px } .work.collapsed { grid-template-columns: minmax(0, 1fr) 52px }
+  .side { grid-column: 1 / -1; order: 3; position: static; max-height: none }
+}
+@media (max-width: 800px) {
+  .work, .work.collapsed { grid-template-columns: minmax(0, 1fr) }
+  .insp { position: static; max-height: none } .rail { flex-direction: row !important; width: auto !important }
+}
+.box { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
+.castrow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center }
+.dot { width: 10px; height: 10px; border-radius: 50% }
+.outl { text-align: left; border: 0; background: transparent; min-height: 0; padding: 3px 4px; border-radius: 5px; display: block; width: 100% }
+.outl:hover { background: var(--accent-soft) }
+.prob { text-align: left; border: 0; border-radius: 8px; padding: 7px 9px; min-height: 0; display: flex; flex-direction: column; gap: 2px; width: 100% }
+.prob.e { background: var(--warn-soft); color: var(--warn) }
+.prob.r { background: var(--bg) }
+.prob .w { font: 600 11.5px var(--mono) }
+
+.lines { padding: 6px 0 10px }
+.line { display: grid; grid-template-columns: 4px 34px minmax(0, 1fr); gap: 0 10px; padding: 8px 12px 8px 8px; margin: 0 6px; border-radius: 8px; cursor: default }
+.line:hover { background: var(--hover) }
+.line.sel { background: var(--sel-bg); box-shadow: inset 0 0 0 1px var(--accent) }
+.rampbar { width: 3px; border-radius: 2px; background: var(--accent) }
+.play { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center }
+.play.busy { opacity: .5; cursor: progress }
+.play.fresh { border-color: var(--ok) }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px }
+.lid { font: 12px var(--mono); color: var(--muted); border: 0; background: transparent; padding: 0; min-height: 0 }
+.spk { font-weight: 600; font-size: 13px }
+.status { margin-left: auto; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; color: var(--accent-ink) }
+.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent) }
+.txt { font-size: 15.5px; line-height: 1.7 }
+.tok { border: 0; background: transparent; padding: 1px 2px; margin: 0 -1px; border-radius: 4px; min-height: 0; line-height: 1.5; cursor: pointer }
+.tok:hover { background: var(--accent-soft) }
+.tok.mk { background: var(--accent-soft); color: var(--accent-ink) }
+.tok.on { background: var(--accent); color: var(--on-accent) }
+.tok.unk { text-decoration: underline wavy var(--warn); text-underline-offset: 4px }
+.badge { font: 600 10px var(--mono); margin-left: 2px; vertical-align: super; line-height: 0 }
+.pz { font: 10.5px var(--mono); color: var(--muted); border-left: 2px solid var(--muted); border-right: 2px solid var(--muted); padding: 0 3px; margin: 0 3px; white-space: nowrap }
+.cmt { color: var(--muted); font-style: italic; font-size: 12.5px }
+.err { color: var(--warn); font-size: 12.5px }
+.rawline { margin-top: 6px; font: 12px var(--mono); padding: 6px 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; white-space: pre }
+.sec { padding: 16px 20px 6px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 10px }
+.sec::after { content: ""; flex: 1; height: 1px; background: var(--line) }
+.rampb { margin: 8px 14px 2px; padding: 6px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px }
+.rampb .mono { font-weight: 600; font-size: 13px }
+.endb { margin: 0 14px 6px; padding: 2px 12px; font: 12px var(--mono); color: var(--muted) }
+.misc { margin: 2px 14px; padding: 2px 12px; font: 12px var(--mono); color: var(--muted) }
+
+/* inspector */
+.rail { width: 52px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 12px }
+.rail .vt { writing-mode: vertical-rl; border: 0; background: transparent; min-height: 0; padding: 6px; font-size: 12.5px; font-weight: 600 }
+.ihead { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; min-height: 0; text-align: left }
+.ihead svg { transition: transform .15s }
+.ihead[aria-expanded=false] svg { transform: rotate(-90deg) }
+.code { font: 13.5px var(--mono); padding: 7px 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; white-space: pre }
+.code .w { color: var(--accent-ink); font-weight: 600 } .code .m { color: var(--warn) }
+.field { display: flex; flex-direction: column; gap: 5px }
+.presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px }
+.presets button { padding: 3px 2px; display: flex; flex-direction: column; align-items: center; min-height: 0; font-size: 11px }
+.presets button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent) }
+.curve { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 4px 4px 0 }
+.curve svg { display: block; width: 100%; height: auto; cursor: ns-resize; touch-action: none; user-select: none }
+.summary { padding: 8px 10px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px }
+.styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px }
+.styles button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent) }
+.styles button.inherited { box-shadow: inset 0 0 0 2px var(--accent); }
+.fx { display: flex; align-items: center; gap: 10px; text-align: left; width: 100% }
+.fx .box2 { width: 16px; height: 16px; flex: none; border-radius: 4px; border: 2px solid currentColor }
+.fx.on { background: var(--delivery-soft); color: var(--delivery); border-color: transparent }
+.fx.on .box2 { background: currentColor }
+.srow { display: grid; grid-template-columns: 58px minmax(0, 1fr) 64px; gap: 0 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line) }
+.srow input { width: 64px; padding: 3px 6px; font: 12.5px var(--mono) }
+.srow .eff { grid-column: 2 / 4; font: 11px var(--mono); color: var(--muted) }
+.src { font: 600 10.5px var(--font) }
+.src.s-line { color: var(--accent-ink) } .src.s-cast { color: var(--delivery) } .src.s-ramp { color: var(--accent-ink) }
+.chain { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 3px 8px; font: 12px var(--mono) }
+.chain span:nth-child(odd) { color: var(--muted) }
+.pv { display: flex; align-items: center; gap: 8px; font-size: 12.5px }
+
+/* source */
+.srcwrap { padding: 0 }
+.srcbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap }
+.editor { position: relative; height: calc(100vh - 200px); min-height: 360px }
+.editor pre, .editor textarea { position: absolute; inset: 0; margin: 0; padding: 12px 14px; font: 13px/1.7 var(--mono); white-space: pre; overflow: auto; tab-size: 4; border: 0 }
+.editor pre { pointer-events: none; color: var(--fg) }
+.editor textarea { background: transparent; color: transparent; caret-color: var(--fg); resize: none; outline: none }
+.editor textarea::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: transparent }
+.h-id { color: var(--muted) } .h-flag { color: var(--warn); font-weight: 600 } .h-spk { font-weight: 600 }
+.h-dir { color: var(--delivery) } .h-w { color: var(--accent-ink); font-weight: 600 } .h-m { color: var(--warn) }
+.h-at { color: var(--accent-ink); font-weight: 600 } .h-c { color: var(--muted); font-style: italic } .h-sec { font-weight: 700 }
+.h-bad { background: var(--warn-soft) }
+.complete { position: absolute; z-index: 3; width: 340px; max-height: 260px; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); font-size: 12.5px }
+.complete .ch { padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11.5px }
+.complete .it { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; padding: 4px 10px; cursor: pointer }
+.complete .it.on { background: var(--accent-soft); color: var(--accent-ink) }
+.complete .it b { font: 600 12.5px var(--mono) }
+
+#view-voices iframe { display: block; width: 100%; height: calc(100vh - 51px); border: 0; background: var(--bg) }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; max-width: min(640px, calc(100vw - 32px)); z-index: 20; box-shadow: 0 6px 20px rgba(0,0,0,.2) }
+.toast.err { background: var(--warn); color: #fff }
+.empty { padding: 40px; text-align: center; color: var(--muted) }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><b>JiveTalker</b><span class="mono hint" id="folder"></span></div>
+  <nav class="tabs" role="tablist" aria-label="Tools">
+    <button role="tab" id="tab-script" aria-selected="true" data-tab="script"><b>Script</b><small id="tabScriptSub">voice script</small></button>
+    <button role="tab" id="tab-voices" aria-selected="false" data-tab="voices"><b>Voices</b><small>mixer</small></button>
+  </nav>
+  <div class="grow"></div>
+  <div class="barright" id="scriptActions">
+    <button class="chip" id="checkChip" title="Show problems"></button>
+    <span class="hint" id="renderInfo"></span>
+    <button id="stopBtn" class="small" hidden>Stop</button>
+    <button class="primary" id="renderBtn">Render</button>
+  </div>
+</header>
+
+<main id="view-script">
+  <div class="subbar">
+    <span class="mono" style="font-weight:600" id="fileName"></span>
+    <div class="seg" role="group" aria-label="View">
+      <button id="vVisual" class="on" style="min-width:76px">Visual</button>
+      <button id="vSource" style="min-width:76px">Source</button>
+    </div>
+    <span class="hint" id="saveState"></span>
+    <div class="grow"></div>
+    <button class="small" id="undoBtn" title="Undo (Ctrl+Z)">Undo</button>
+    <button class="small" id="redoBtn" title="Redo (Ctrl+Shift+Z)">Redo</button>
+  </div>
+
+  <div class="work" id="work">
+    <aside class="side" id="side"></aside>
+    <section style="min-width:0">
+      <div class="card lines" id="lines"></div>
+      <div class="card srcwrap" id="source" hidden>
+        <div class="srcbar">
+          <span class="hint" id="srcState">Saved</span>
+          <div class="grow"></div>
+          <span class="hint">Typing <span class="mono">(</span> after <span class="mono">[word]</span>, <span class="mono">{</span> after a speaker, or <span class="mono">@</span> lists what fits. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves.</span>
+          <button class="small" id="srcRevert">Revert</button>
+          <button class="small primary" id="srcSave">Save</button>
+        </div>
+        <div class="editor" id="editor">
+          <pre id="srcHl" aria-hidden="true"></pre>
+          <textarea id="srcText" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Script source"></textarea>
+          <div class="complete" id="complete" hidden></div>
+        </div>
+      </div>
+    </section>
+    <aside class="insp" id="insp"></aside>
+  </div>
+</main>
+
+<main id="view-voices" hidden><iframe id="mixerFrame" title="Voice mixer"></iframe></main>
+<audio id="player" hidden></audio>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const fmtNum = v => String(Math.round(v * 1000) / 1000);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('jt.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('jt.' + k, JSON.stringify(v)); } catch (e) {} }
+};
+
+async function api(path, body) {
+  const r = await fetch(path, {method: body ? 'POST' : 'GET', headers: {'Content-Type': 'application/json'},
+                               body: body ? JSON.stringify(body) : undefined});
+  const j = await r.json().catch(() => ({error: r.statusText}));
+  if (!r.ok) { const e = new Error(j.error || r.statusText); e.data = j; e.status = r.status; throw e; }
+  return j;
+}
+
+let toastTimer = null;
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, err ? 7000 : 3500);
+}
+
+// ================================================================== state
+let INFO = null;        // /api/toolkit
+let M = null;           // the script model (/api/script)
+let LINES = [];         // line items in order
+let BYID = {};          // id -> line item
+let SPK = {};           // cast name -> colour index
+let sel = null;         // {id, a, b}: the selected line and word range (token indices; a = null: no word)
+let view = store.get('view', 'visual');
+let panelOpen = store.get('panelOpen', true);
+let wordOpen = store.get('wordOpen', true);
+let lineOpen = store.get('lineOpen', true);
+let moreSettings = store.get('moreSettings', false);
+const undoStack = [], redoStack = [];
+const unknown = {};     // id -> {text, words}
+const previews = {};    // id -> [{key, url, seconds, take}]
+const previewByKey = {};
+let pending = 0;        // edits in flight
+let chain = Promise.resolve();
+
+// ================================================================== text helpers (mirror marks.py)
+const MARK_RE = /\[([^\]]+)\]\(([^)]*)\)/g;
+const plainOf = s => s.replace(MARK_RE, '$1');
+
+function tokenize(text) {
+  const toks = [];
+  const plainSeg = (s, off) => {
+    const wre = /\S+/g; let w;
+    while ((w = wre.exec(s))) {
+      const raw = w[0], start = off + w.index;
+      const c = raw.match(/^([^\p{L}\p{N}]*)(.*?)([^\p{L}\p{N}]*)$/u);
+      if (!c[2]) toks.push({kind: 'punct', start, end: start + raw.length, text: raw});
+      else toks.push({kind: 'word', start, end: start + raw.length, cs: start + c[1].length,
+                      ce: start + c[1].length + c[2].length, pre: c[1], word: c[2], post: c[3], spec: null});
+    }
+  };
+  let pos = 0, m; MARK_RE.lastIndex = 0;
+  while ((m = MARK_RE.exec(text))) {
+    plainSeg(text.slice(pos, m.index), pos);
+    toks.push({kind: 'word', start: m.index, end: m.index + m[0].length, cs: m.index, ce: m.index + m[0].length,
+               pre: '', word: m[1], post: '', spec: m[2]});
+    pos = m.index + m[0].length;
+  }
+  plainSeg(text.slice(pos), pos);
+  toks.forEach((t, i) => { t.gap = i > 0 && /\s/.test(text.slice(toks[i - 1].end, t.start)); });
+  return toks;
+}
+
+function parseSpec(spec) {
+  const o = {stress: 0, stretch: 0, shape: [], pause: 0, pauseS: 0, pron: null, say: null, other: ''};
+  const s0 = (spec || '').trim();
+  if (!s0) return o;
+  if (s0[0] === '/') { o.pron = s0.replace(/^\/|\/$/g, ''); return o; }
+  if (s0[0] === '=') { o.say = s0.slice(1).trim(); return o; }
+  let s = s0.replace(/\s/g, '');
+  const N = '-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)';
+  const sh = s.match(new RegExp(`\\^(${N}(?:>${N})*)`));
+  if (sh) { o.shape = sh[1].split('>').map(Number); s = s.replace(sh[0], ''); }
+  const ps = s.match(/\|(\d+(?:\.\d*)?|\.\d+)/);
+  if (ps) { o.pauseS = +ps[1]; s = s.replace(ps[0], ''); }
+  for (const c of s) {
+    if (c === '+') o.stress++; else if (c === '-') o.stress--;
+    else if (c === '~') o.stretch++; else if (c === '|') o.pause++; else o.other += c;
+  }
+  return o;
+}
+function formatSpec(o) {
+  if (o.pron !== null) return '/' + o.pron + '/';
+  if (o.say !== null) return '=' + o.say;
+  let s = o.stress > 0 ? '+'.repeat(o.stress) : '-'.repeat(-o.stress);
+  s += '~'.repeat(o.stretch);
+  if (o.shape.length) s += '^' + o.shape.map(fmtNum).join('>');
+  s += o.pauseS ? '|' + fmtNum(o.pauseS) : '|'.repeat(o.pause);
+  return s + o.other;
+}
+
+// the text with the selected tokens a..b wrapped in one mark (spec '' removes the mark)
+function applySpec(text, toks, a, b, spec) {
+  const A = toks[a], B = toks[b];
+  const inner = plainOf(text.slice(A.cs, B.ce));
+  const repl = spec ? `[${inner}](${spec})` : inner;
+  return {text: text.slice(0, A.cs) + repl + text.slice(B.ce), region: [A.cs, A.cs + repl.length]};
+}
+
+const STYLE_NAMES = ['normal', 'trance', 'deep', 'shout', 'soft', 'whisper'];
+const STYLE_HINT = {
+  normal: 'The voice as it is.',
+  trance: 'Slower, lower and flatter, with longer pauses. Depth 0 is light, 1 is deepest.',
+  deep: 'Dead-flat, slow monotone, for very deep trance and mantras.',
+  shout: 'Higher and livelier.',
+  soft: 'Quiet and gentle: a little lower, with a trace of whisper mixed in (breath 0.15).',
+  whisper: 'Breathy whisper, modelled on a real one.'
+};
+const EFFECTS = [['internal', 'A light echo, for thoughts'], ['muffled', 'Through a door or wall: highs cut, a little room']];
+const SETTINGS = [
+  ['speed', 'base speed; the style scales it', 0.05], ['pitch', 'semitones up; adds up across levels', 0.5],
+  ['pause', '× the pauses at punctuation', 0.1], ['range', 'pitch movement: 0 flat, 1 natural', 0.1],
+  ['human', 'natural variation (0 = none)', 0.1], ['rise', 'question rise in semitones (0 = off)', 1],
+  ['volume', 'dB, adds up across levels', 1], ['drift', 'semitones of slow fall', 0.5],
+  ['floor', 'ends voicing when pitch sags', 0.05], ['breath', 'own whisper mixed in, 0-1', 0.05]];
+const dirParts = d => (d || '').split(',').map(s => s.trim()).filter(Boolean);
+const head = p => p.split(/\s+/)[0].toLowerCase();
+function dirSetStyle(d, style, depth) {
+  const parts = dirParts(d).filter(p => !STYLE_NAMES.includes(head(p)));
+  if (style) parts.unshift(style === 'trance' ? `trance ${fmtNum(depth ?? 0.5)}` : style);
+  return parts.join(', ');
+}
+function dirToggle(d, name) {
+  const parts = dirParts(d), i = parts.findIndex(p => head(p) === name);
+  if (i >= 0) parts.splice(i, 1); else parts.push(name);
+  return parts.join(', ');
+}
+function dirSet(d, name, value) {
+  const parts = dirParts(d), i = parts.findIndex(p => head(p) === name);
+  if (value === null || value === '') { if (i >= 0) parts.splice(i, 1); }
+  else if (i >= 0) parts[i] = `${name} ${value}`; else parts.push(`${name} ${value}`);
+  return parts.join(', ');
+}
+
+// ================================================================== tabs and the mixer
+const frame = $('#mixerFrame');
+let mixerReady = false; const mixerQueue = [];
+function showTab(t) {
+  if (t === 'script' && !INFO?.script) t = 'voices';
+  for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
+  $('#view-script').hidden = t !== 'script'; $('#view-voices').hidden = t !== 'voices';
+  $('#scriptActions').style.visibility = t === 'script' && INFO?.script ? 'visible' : 'hidden';
+  if (t === 'voices' && !frame.src) frame.src = '/mixer?embed=1';
+  if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+}
+for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => showTab(b.dataset.tab);
+function openVoices(source, line) {
+  showTab('voices');
+  const msg = {jivetalker: 'load', source, text: line ? (line.spoken || plainOf(line.text)) : null, direction: line ? (line.resolved ?? '') : null};
+  if (mixerReady) frame.contentWindow.postMessage(msg, location.origin); else mixerQueue.push(msg);
+}
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || !e.data.jivetalker) return;
+  if (e.data.jivetalker === 'ready') {
+    mixerReady = true; mixerQueue.splice(0).forEach(m => frame.contentWindow.postMessage(m, location.origin));
+  } else if (e.data.jivetalker === 'saved' && M) {
+    loadModel().then(() => toast(`Saved ${e.data.name}. Lines that use it show as needing a render.`));
+  }
+});
+
+// ================================================================== model
+async function loadModel() { setModel(await api('/api/script')); }
+function setModel(m) {
+  M = m; LINES = M.items.filter(i => i.kind === 'line'); BYID = {};
+  for (const l of LINES) if (!BYID[l.id]) BYID[l.id] = l;
+  SPK = {}; M.cast.forEach((c, i) => SPK[c.name] = i % 6);
+  if (sel && !BYID[sel.id]) sel = null;
+  if (sel && sel.a !== null) {
+    const n = tokenize(BYID[sel.id].text).length;
+    if (sel.a >= n) sel = {id: sel.id, a: null, b: null}; else sel.b = Math.min(sel.b, n - 1);
+  }
+  if (!sel && LINES.length) sel = {id: LINES[0].id, a: null, b: null};
+  $('#fileName').textContent = M.name; $('#tabScriptSub').textContent = M.name; $('#folder').textContent = M.folder + '/';
+  document.title = `${M.name} · JiveTalker`;
+  if (!srcDirty) setSource(M.text);
+  renderAll();
+  checkWords();
+}
+function renderAll() { renderBar(); renderSide(); renderLines(); renderInsp(); }
+
+// external changes: poll the file's version
+setInterval(async () => {
+  if (!M || document.hidden || pending || job.running) return;
+  try {
+    const v = (await api('/api/script/version')).version;
+    if (v !== M.version && !pending) {
+      if (srcDirty) { $('#srcState').textContent = 'The file changed on disk: Save will ask before replacing it'; return; }
+      await loadModel(); toast('Reloaded: the file changed on disk');
+    }
+  } catch (e) {}
+}, 2500);
+
+// ================================================================== edits
+function enqueue(fn) {
+  pending++; saveState();
+  chain = chain.then(fn).catch(e => {
+    if (e.data && e.data.conflict) { setModel(e.data.model); toast('The file changed elsewhere, so it was reloaded. Try that again.', true); }
+    else toast(e.message, true);
+  }).finally(() => { pending--; saveState(); });
+  return chain;
+}
+function saveState() { $('#saveState').textContent = pending ? 'Saving…' : (M ? 'Saved' : ''); $('#undoBtn').disabled = !undoStack.length; $('#redoBtn').disabled = !redoStack.length; }
+function editLine(id, fn, after) {
+  return enqueue(async () => {
+    const l = BYID[id]; if (!l) return;
+    const ch = fn(l); if (!ch) return;
+    if ((ch.text === undefined || ch.text === l.text) && (ch.direction === undefined || ch.direction === l.direction) && ch.flags === undefined) return;
+    const before = M.text;
+    const res = await api('/api/script/edit', Object.assign({base: M.version, lineno: l.lineno, expect: l.raw}, ch));
+    undoStack.push(before); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0;
+    setModel(res); if (after) after();
+  });
+}
+function putText(text, toStack, label) {
+  return enqueue(async () => {
+    const before = M.text;
+    setModel(await api('/api/script/text', {base: M.version, text}));
+    toStack.push(before); if (label) toast(label);
+  });
+}
+function undo() { if (undoStack.length) putText(undoStack.pop(), redoStack, 'Undone'); }
+function redo() { if (redoStack.length) putText(redoStack.pop(), undoStack, 'Redone'); }
+$('#undoBtn').onclick = undo; $('#redoBtn').onclick = redo;
+
+// mark the selected words: fn(spec object) changes it
+function editMark(fn) {
+  if (!sel || sel.a === null) return;
+  const {id, a, b} = sel;
+  let region = null;
+  editLine(id, l => {
+    const toks = tokenize(l.text);
+    if (!toks[a] || !toks[b]) return null;
+    const cur = parseSpec(currentSpec(toks, a, b));
+    const o = fn(cur) || cur;
+    const r = applySpec(l.text, toks, a, b, formatSpec(o));
+    region = r.region;
+    return {text: r.text};
+  }, () => {
+    const toks = tokenize(BYID[id].text);
+    const inside = toks.map((t, i) => [t, i]).filter(([t]) => t.kind === 'word' && t.cs >= region[0] && t.ce <= region[1]).map(([, i]) => i);
+    if (inside.length) { sel = {id, a: inside[0], b: inside[inside.length - 1]}; renderLines(); renderInsp(); }
+  });
+}
+function currentSpec(toks, a, b) {
+  for (let i = a; i <= b; i++) if (toks[i].kind === 'word' && toks[i].spec !== null) return toks[i].spec;
+  return '';
+}
+const clearForm = o => { o.pron = null; o.say = null; return o; };
+
+// ================================================================== bar
+function renderBar() {
+  const s = M.summary, chip = $('#checkChip');
+  if (s.errors) { chip.className = 'chip warn'; chip.textContent = `${s.errors} problem${s.errors > 1 ? 's' : ''}`; }
+  else if (s.flagged) { chip.className = 'chip'; chip.textContent = `${s.flagged} to review`; }
+  else { chip.className = 'chip ok'; chip.textContent = 'Check OK'; }
+  if (job.running) return renderJob();
+  const n = s.render, rb = $('#renderBtn');
+  rb.textContent = n ? `Render ${n} line${n > 1 ? 's' : ''}` : s.reuse ? 'Update clips' : 'All clips up to date';
+  rb.disabled = !n && !s.reuse;
+  $('#renderInfo').textContent = n ? `~${fmtTime(s.estimate_s)}` : '';
+  $('#stopBtn').hidden = true;
+}
+$('#checkChip').onclick = () => { const p = $('#problems'); if (p) p.scrollIntoView({block: 'nearest', behavior: 'smooth'}); };
+const fmtTime = s => s < 90 ? `${Math.max(1, Math.round(s))} s` : `${Math.round(s / 60)} min`;
+
+// ================================================================== sidebar
+function renderSide() {
+  const cast = M.cast.map(c => `
+    <div class="castrow">
+      <span class="dot" style="background:var(--s${SPK[c.name]})"></span>
+      <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(c.name)}</span>
+      <span class="hint">${c.lines}</span>
+      <span></span>
+      <span class="mono hint" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.voice)}">${esc(c.voice)}${c.direction ? ' {' + esc(c.direction) + '}' : ''}${c.found ? '' : ' · not found'}</span>
+      <button class="small" data-voices="${esc(c.name)}" ${c.source ? '' : 'disabled title="not in the mixer\'s voice folders"'}>Voices</button>
+    </div>`).join('');
+  const outline = [];
+  for (const it of M.items) {
+    if (it.kind === 'section') outline.push(`<button class="outl" data-jump="sec:${esc(it.title)}" style="font-weight:600">${esc(it.title)}</button>`);
+    else if (it.kind === 'ramp') outline.push(`<button class="outl mono hint" data-jump="ramp:${it.lineno}" style="padding-left:14px;font-size:12px">↗ ${esc(it.what)} ${fmtNum(it.a)} → ${fmtNum(it.b)} · ${esc(it.speaker || '?')} · ${it.count}</button>`);
+  }
+  const probs = problems();
+  $('#side').innerHTML = `
+    <section class="card box"><h3 class="lab" style="margin:0">Cast</h3>${cast || '<div class="hint">No @cast lines yet.</div>'}
+      ${M.defaults ? `<div class="mono hint" style="font-size:11.5px">@defaults ${esc(M.defaults)}</div>` : ''}</section>
+    ${outline.length ? `<section class="card box"><h3 class="lab" style="margin:0">Outline</h3><div>${outline.join('')}</div></section>` : ''}
+    <section class="card box" id="problems"><h3 class="lab" style="margin:0">Check</h3>
+      ${probs.length ? probs.map(p => `<button class="prob ${p.kind}" data-goto="${esc(p.id ?? '')}" data-lineno="${p.lineno ?? ''}" data-word="${esc(p.word ?? '')}">
+        <span class="w">${esc(p.where)} · ${p.kind === 'e' ? 'problem' : 'review'}</span><span>${esc(p.msg)}</span></button>`).join('')
+        : '<div class="hint">Every line reads cleanly.</div>'}
+      <div class="hint" style="font-size:11.5px">${M.summary.lines} lines · ${M.summary.cached} clips up to date${M.summary.reuse ? ` · ${M.summary.reuse} to rename` : ''} · clips in <span class="mono" title="${esc(M.out)}">${esc(M.out_rel)}</span></div>
+    </section>`;
+}
+function problems() {
+  const out = [];
+  for (const p of M.problems) out.push({kind: 'e', where: p.lineno ? 'line ' + p.lineno : 'header', msg: p.msg, lineno: p.lineno});
+  for (const l of LINES) {
+    for (const e of l.errors) out.push({kind: 'e', where: l.id, msg: e, id: l.id});
+    const u = unknown[l.id];
+    if (u && u.text === l.text) for (const w of u.words) out.push({kind: 'e', where: l.id, word: w, id: l.id, msg: `“${w}”: the phonemizer can’t read it. Give it a pronunciation.`});
+  }
+  for (const l of LINES) if (l.flags.length) out.push({kind: 'r', where: l.id, id: l.id, msg: `Flagged ${l.flags.map(f => '!' + f).join(' ')}. Listen, then clear the flag.`});
+  return out;
+}
+$('#side').addEventListener('click', e => {
+  const v = e.target.closest('[data-voices]');
+  if (v) { const c = M.cast.find(c => c.name === v.dataset.voices); const l = sel && BYID[sel.id]; return openVoices(c.source, l && l.who === c.name ? l : null); }
+  const j = e.target.closest('[data-jump]');
+  if (j) {
+    if (view === 'source') return;
+    const el = document.querySelector(`[data-anchor="${CSS.escape(j.dataset.jump)}"]`); if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+    return;
+  }
+  const p = e.target.closest('[data-goto]');
+  if (p) {
+    if (view === 'source') return gotoSourceLine(+p.dataset.lineno || (BYID[p.dataset.goto] || {}).lineno);
+    if (!p.dataset.goto) return;
+    let a = null;
+    if (p.dataset.word) { const i = tokenize(BYID[p.dataset.goto].text).findIndex(t => t.kind === 'word' && t.word === p.dataset.word); if (i >= 0) a = i; }
+    select(p.dataset.goto, a, a);
+  }
+});
+
+// ================================================================== the lines
+function renderLines() {
+  if (view !== 'visual') return;
+  const out = [];
+  let cmtFor = null;
+  for (const it of M.items) {
+    if (it.kind === 'section') out.push(`<div class="sec" data-anchor="sec:${esc(it.title)}">${esc(it.title)}</div>`);
+    else if (it.kind === 'ramp') out.push(`<div class="rampb" data-anchor="ramp:${it.lineno}"><svg width="44" height="14" viewBox="0 0 44 14" aria-hidden="true"><path d="M2 12 L42 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="mono">${esc(it.header)}</span><span>for ${esc(it.speaker || '?')} · ${it.count} line${it.count === 1 ? '' : 's'}; other speakers untouched</span></div>`);
+    else if (it.kind === 'end') out.push(`<div class="endb">@end</div>`);
+    else if (it.kind === 'comment') out.push(`<div class="misc cmt">${esc(it.text)}</div>`);
+    else if (it.kind === 'directive') out.push(`<div class="misc">${esc(it.text)}</div>`);
+    else out.push(lineHTML(it));
+  }
+  $('#lines').innerHTML = out.join('') || '<div class="empty">No lines yet. Add some in Source.</div>';
+}
+function lineHTML(l) {
+  const isSel = sel && sel.id === l.id;
+  const chips = [];
+  for (const e of l.effects || []) chips.push(`<span class="chip ${e.src === 'line' ? 'fx' : 'inh'}" title="from ${esc(e.src)}">${esc(e.name)}${e.src === 'line' ? '' : ' · ' + esc(e.src.replace('@', ''))}</span>`);
+  if (l.style && l.style !== 'normal' || l.own_style) {
+    const t = l.style === 'trance' ? `trance ${fmtNum(l.depth ?? 0.5)}` : l.style;
+    chips.unshift(`<span class="chip ${l.style_src === 'line' ? 'st' : 'inh'}" title="from ${esc(l.style_src)}">${esc(t)}${l.style_src === 'line' ? '' : ' · ' + esc(l.style_src.replace('@', ''))}</span>`);
+  }
+  for (const [k, v] of Object.entries(l.own_settings || {})) chips.push(`<span class="chip">${esc(k)} ${esc(fmtNum(v))}</span>`);
+  if (l.errors.length && !l.settings && l.direction) chips.push(`<span class="chip warn">{${esc(l.direction)}}</span>`);
+  const flags = l.flags.map(f => `<span class="chip warn">!${esc(f)} <button class="plain" data-unflag="${esc(f)}" aria-label="Clear the flag ${esc(f)}" title="Clear the flag">×</button></span>`).join('');
+  let status = '';
+  if (l.status === 'render') status = '<span class="status"><i></i>needs render</span>';
+  else if (l.status === 'reuse') status = '<span class="status" style="color:var(--muted)">clip to rename</span>';
+  const u = unknown[l.id], unk = u && u.text === l.text ? u.words : [];
+  const toks = tokenize(l.text);
+  const parts = toks.map((t, i) => {
+    const gap = t.gap ? ' ' : '';
+    if (t.kind === 'punct') return gap + esc(t.text);
+    const o = parseSpec(t.spec);
+    const cls = ['tok'];
+    if (t.spec !== null) cls.push('mk');
+    if (isSel && sel.a !== null && i >= sel.a && i <= sel.b) cls.push('on');
+    if (unk.includes(t.word) && o.pron === null) cls.push('unk');
+    const st = [];
+    if (o.stress > 0) st.push(`font-weight:${o.stress > 1 ? 800 : 700}`);
+    if (o.stress < 0) st.push(`opacity:${Math.max(.4, .78 - .12 * -o.stress)}`);
+    if (o.stretch) st.push(`letter-spacing:${(.05 * o.stretch).toFixed(2)}em`);
+    const pz = o.pauseS ? fmtNum(o.pauseS) + ' s' : o.pause ? (0.2 * o.pause).toFixed(1) + ' s' : '';
+    const badge = t.spec !== null ? `<span class="badge">${esc(t.spec.length > 14 ? t.spec.slice(0, 13) + '…' : t.spec)}</span>` : '';
+    return `${gap}${esc(t.pre)}<button class="${cls.join(' ')}" data-tok="${i}" style="${st.join(';')}">${esc(t.word)}${badge}</button>${esc(t.post)}${pz ? `<span class="pz">${pz}</span>` : ''}`;
+  }).join('');
+  const r = l.ramp, rampOpacity = r && r.value !== null ? .3 + .7 * (r.b === r.a ? 1 : (r.value - Math.min(r.a, r.b)) / Math.abs(r.b - r.a)) : 0;
+  const preview = previews[l.id] && previews[l.id][0] && previews[l.id][0].key === l.key;
+  return `<div class="line${isSel ? ' sel' : ''}" data-id="${esc(l.id)}">
+    <span class="rampbar" style="${r ? (r.value !== null ? `opacity:${rampOpacity.toFixed(2)}` : 'background:var(--line)') : 'background:transparent'}"></span>
+    <div><button class="play${preview ? ' fresh' : ''}" data-play aria-label="Play ${esc(l.id)}" title="${l.status === 'cached' ? 'Play its clip' : 'Preview (render it now)'}"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5 L10.5 6 L3 10.5 Z" fill="currentColor"/></svg></button></div>
+    <div style="min-width:0">
+      ${l.comments.map(c => `<div class="cmt">${esc(c)}</div>`).join('')}
+      <div class="meta"><button class="lid" data-selline>${esc(l.id)}</button>${flags}<span class="spk" style="color:var(--s${SPK[l.who] ?? 4})">${esc(l.speaker)}</span>${chips.join('')}${status}</div>
+      <div class="txt">${parts}</div>
+      ${l.errors.map(e => `<div class="err">${esc(e)}</div>`).join('')}
+      ${isSel ? `<div class="rawline">${hlLine(l.raw)}</div>` : ''}
+    </div></div>`;
+}
+$('#lines').addEventListener('click', e => {
+  const row = e.target.closest('.line'); if (!row) return;
+  const id = row.dataset.id;
+  const uf = e.target.closest('[data-unflag]');
+  if (uf) return editLine(id, l => ({flags: l.flags.filter(f => f !== uf.dataset.unflag)}));
+  if (e.target.closest('[data-play]')) return playLine(id, e.target.closest('[data-play]'));
+  const t = e.target.closest('[data-tok]');
+  if (t) {
+    const i = +t.dataset.tok;
+    if (e.shiftKey && sel && sel.id === id && sel.a !== null) select(id, Math.min(sel.a, i), Math.max(sel.b, i));
+    else select(id, i, i);
+    return;
+  }
+  if (sel && sel.id === id && !e.target.closest('[data-selline]')) return;
+  select(id, null, null);
+});
+function select(id, a, b) {
+  sel = {id, a, b};
+  if (a !== null && !wordOpen) { wordOpen = true; store.set('wordOpen', true); }
+  renderLines(); renderInsp();
+  { const el = document.querySelector(`.line[data-id="${CSS.escape(id)}"]`); if (el) el.scrollIntoView({block: 'nearest'}); }
+}
+
+// ================================================================== inspector
+const chev = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4 L6 8 L10 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PITCH = [['', 'None'], ['1.5', 'Up'], ['-2', 'Down'], ['0>3', 'Rise'], ['2>-1', 'Fall'], ['0>3>0', 'Arc'], ['0>-2>0', 'Dip']];
+const STRESS_HINT = {'-3': 'Strongest de-stress: shorter still. Past this Kokoro starts swallowing sounds.', '-2': 'Stronger de-stress.',
+  '-1': 'De-stress: lower, quieter and a little shorter.', '0': 'No stress.', '1': 'Stress: a pitch lift that eases down across the word, a little louder and longer.',
+  '2': 'Strong stress.', '3': 'Level 3: an untuned extreme that may distort.', '4': 'Level 4: an untuned extreme that may distort.', '5': 'Level 5 (the most): an untuned extreme that may distort.'};
+const STRETCH_SUB = ['×1', '×1.25', '×1.5', '×1.75', '×2', '×2.5'];
+let curve = null;       // the pitch points while dragging
+
+function renderInsp() {
+  const work = $('#work'), insp = $('#insp');
+  work.classList.toggle('collapsed', !panelOpen);
+  const l = sel && BYID[sel.id];
+  if (!panelOpen) {
+    const w = l && sel.a !== null ? plainOf(tokenize(l.text).slice(sel.a, sel.b + 1).map(t => t.word || t.text).join(' ')) : '';
+    insp.innerHTML = `<div class="card rail">
+      <button class="small" data-act="panel" aria-label="Expand the inspector" title="Expand" style="width:34px;height:34px;padding:0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 2 L4 7 L9 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      ${w ? `<button class="vt" data-act="openword" style="color:var(--accent-ink)">Word · ${esc(w)}</button>` : ''}
+      ${l ? `<button class="vt" data-act="openline" style="color:var(--muted)">Line · ${esc(l.id)}</button>` : ''}</div>`;
+    return;
+  }
+  insp.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span class="lab">Inspector</span><div class="grow"></div>
+      <button class="small" data-act="panel" aria-label="Collapse the inspector" title="Collapse" style="width:30px;height:30px;padding:0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 2 L10 7 L5 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+    <section class="card box" style="gap:12px">${l ? wordHTML(l) : '<div class="hint">Pick a line.</div>'}</section>
+    ${l ? `<section class="card box" style="gap:12px">${lineInspHTML(l)}</section>` : ''}`;
+  bindCurve();
+}
+
+function wordHTML(l) {
+  if (sel.a === null) return `<h3 class="lab" style="margin:0">Word</h3><div class="hint">Click a word to stress it, draw it out, shape its pitch or add a pause. Shift-click another word to mark several at once.</div>`;
+  const toks = tokenize(l.text), spec = currentSpec(toks, sel.a, sel.b), o = parseSpec(spec);
+  const words = plainOf(l.text.slice(toks[sel.a].cs, toks[sel.b].ce));
+  const head = `<div style="display:flex;align-items:center;gap:8px">
+      <button class="ihead" data-act="word" aria-expanded="${wordOpen}">${chev}<span class="lab">Word</span><span style="font-size:19px;font-weight:700">${esc(words)}</span></button>
+      <div class="grow"></div><button class="small" data-act="clear" ${spec ? '' : 'disabled'}>Clear</button></div>
+    <div class="code"><span class="w">[${esc(words)}]</span><span class="m">${spec ? '(' + esc(spec) + ')' : ''}</span></div>`;
+  if (!wordOpen) return head;
+  const sv = Math.max(-3, Math.min(3, o.stress));
+  const stressBtns = [-3, -2, -1, 0, 1, 2, 3].map(v => {
+    const lab = v === 3 && o.stress > 3 ? '+'.repeat(o.stress) : v > 0 ? '+'.repeat(v) : v < 0 ? '-'.repeat(-v) : '·';
+    return `<button class="${sv === v && o.pron === null && o.say === null ? 'on' : ''}" data-stress="${v === 3 && o.stress > 3 ? o.stress : v}" aria-pressed="${sv === v}"><span class="c">${lab}</span></button>`;
+  }).join('');
+  const stretchBtns = [0, 1, 2, 3, 4, 5].map(v => `<button class="${o.stretch === v && o.pron === null && o.say === null ? 'on' : ''}" data-stretch="${v}"><span class="c">${v ? '~'.repeat(v) : '·'}</span><span class="s">${STRETCH_SUB[v]}</span></button>`).join('');
+  const pauseBtns = [0, 1, 2, 3, 4, 5].map(v => `<button class="${!o.pauseS && o.pause === v && o.pron === null && o.say === null ? 'on' : ''}" data-pause="${v}"><span class="c">${v ? '|'.repeat(v) : '·'}</span><span class="s">${v ? (0.2 * v).toFixed(1) + ' s' : 'none'}</span></button>`).join('');
+  const cur = o.shape.map(fmtNum).join('>');
+  const presets = PITCH.map(([code, name]) => {
+    const pts = code ? code.split('>').map(Number) : [0];
+    return `<button class="${cur === code ? 'on' : ''}" data-shape="${code}" title="${code ? '^' + code : 'no pitch mark'}">${miniCurve(pts.length === 1 ? [pts[0], pts[0]] : pts, !code)}<span>${name}</span></button>`;
+  }).join('');
+  const custom = cur && !PITCH.some(p => p[0] === cur) ? `<button class="on" disabled>${miniCurve(o.shape.length === 1 ? [o.shape[0], o.shape[0]] : o.shape)}<span>Custom</span></button>` : '';
+  const summary = [];
+  if (o.pron !== null) summary.push(`Pronounced /${o.pron}/`);
+  else if (o.say !== null) summary.push(o.say ? `Says “${o.say}”; the screen still shows “${words}”` : 'Silent: not spoken, still on screen');
+  else {
+    if (o.stress > 0) summary.push((o.stress > 1 ? 'Strong stress' : 'Stressed') + ': lifted, louder, longer');
+    if (o.stress < 0) summary.push('De-stressed: lower, quieter, shorter');
+    if (o.stretch) summary.push('drawn out ' + STRETCH_SUB[Math.min(o.stretch, 5)]);
+    if (o.shape.length) summary.push(`pitch ^${cur} semitones`);
+    if (o.pause || o.pauseS) summary.push(`${o.pauseS ? fmtNum(o.pauseS) : (0.2 * o.pause).toFixed(1)} s pause after`);
+    if (o.other) summary.push(`unknown mark “${o.other}”`);
+  }
+  return head + `
+    <div class="field"><span class="lab">Stress</span><div class="seg">${stressBtns}</div><div class="hint">${STRESS_HINT[String(o.stress)] || ''}</div></div>
+    <div class="field"><span class="lab">Draw out</span><div class="seg">${stretchBtns}</div></div>
+    <div class="field"><span class="lab">Pitch shape</span><div class="presets">${presets}${custom}</div>
+      <div class="curve" id="curveBox"></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="small" data-act="addpt" ${o.shape.length >= 6 ? 'disabled' : ''}>+ point</button>
+        <button class="small" data-act="delpt" ${o.shape.length <= 1 ? 'disabled' : ''}>− point</button>
+        <span class="mono grow" style="text-align:right;font-size:12.5px;color:var(--accent-ink)" id="curveCode">${cur ? '^' + esc(cur) : 'no pitch mark'}</span></div>
+      <div class="hint">Drag the points up or down (half-semitone steps). One point shifts the whole word; more glide between them. Adds to the word's own melody and any stress.</div></div>
+    <div class="field"><span class="lab">Pause after</span><div class="seg">${pauseBtns}</div>
+      <label class="hint" style="display:flex;align-items:center;gap:8px">or exactly <input type="number" min="0" max="5" step="0.1" data-input="pauses" value="${o.pauseS || ''}" placeholder="s" style="width:70px"> seconds</label></div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px">
+      <label class="field"><span class="lab">Pronounce (IPA)</span><input type="text" data-input="pron" value="${esc(o.pron ?? '')}" placeholder="ʃɪvˈɔn" class="mono"></label>
+      <label class="field"><span class="lab">Say instead</span><input type="text" data-input="say" value="${esc(o.say ?? '')}" placeholder="Doctor"></label>
+    </div>
+    <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-input="silent" ${o.say === '' ? 'checked' : ''}> Silent (on screen, not spoken)</label>
+    <div class="hint" style="font-size:12px">A word holds marks or a respelling, not both.</div>
+    <div class="summary">${esc(summary.join(' · ') || 'Plain: said as written.')}</div>
+    <div class="hint" style="font-size:12px">Keys: <kbd>+</kbd> <kbd>-</kbd> stress, <kbd>~</kbd> draw out, <kbd>|</kbd> pause, <kbd>^</kbd> pitch shapes, <kbd>0</kbd> clear, <kbd>←</kbd> <kbd>→</kbd> next word (<kbd>Shift</kbd> to extend), <kbd>↑</kbd> <kbd>↓</kbd> next line, <kbd>Space</kbd> play, <kbd>Esc</kbd> deselect.</div>`;
+}
+function miniCurve(pts, dim) {
+  const d = pts.map((v, i) => `${i ? 'L' : 'M'}${(3 + 30 * i / (pts.length - 1)).toFixed(1)} ${(10 - v * 2.2).toFixed(1)}`).join(' ');
+  return `<svg width="36" height="20" viewBox="0 0 36 20" aria-hidden="true"><path d="M3 10 L33 10" stroke="currentColor" stroke-opacity=".2"/><path d="${d}" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" ${dim ? 'stroke-opacity=".35"' : ''}/></svg>`;
+}
+
+// the pitch curve: points spread evenly across the word, dragged in half-semitone steps
+function drawCurve(pts, neutral) {
+  const box = $('#curveBox'); if (!box) return;
+  const lim = Math.max(4, Math.ceil(Math.max(...pts.map(Math.abs))));
+  const W = 300, H = 130, cy = v => 60 - v * (50 / lim), n = pts.length;
+  const cx = i => n === 1 ? 159 : 30 + 258 * i / (n - 1);
+  const grid = [lim, lim / 2, 0, -lim / 2, -lim].map(v => `<line x1="26" x2="292" y1="${cy(v)}" y2="${cy(v)}" stroke="currentColor" stroke-opacity="${v === 0 ? .35 : .12}" ${v ? 'stroke-dasharray="3 4"' : ''}/><text x="20" y="${cy(v) + 3}" text-anchor="end" font-size="10" fill="currentColor" fill-opacity=".55" font-family="monospace">${v > 0 ? '+' : ''}${fmtNum(v)}</text>`).join('');
+  const path = n === 1 ? `M30 ${cy(pts[0])} L288 ${cy(pts[0])}` : pts.map((v, i) => `${i ? 'L' : 'M'}${cx(i).toFixed(1)} ${cy(v).toFixed(1)}`).join(' ');
+  const dots = pts.map((v, i) => `<circle cx="${cx(i)}" cy="${cy(v)}" r="7" fill="${neutral ? 'var(--panel)' : 'var(--accent)'}" stroke="var(--accent)" stroke-width="2"/>${neutral ? '' : `<text x="${cx(i)}" y="${v >= lim - 1 ? cy(v) + 21 : cy(v) - 12}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--accent-ink)" font-family="monospace">${v > 0 ? '+' : ''}${fmtNum(v)}</text>`}`).join('');
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pitch curve: drag the points up or down"><g style="color:var(--fg)">${grid}</g><path d="${path}" stroke="var(--accent)" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" ${neutral ? 'stroke-opacity=".35"' : ''}/>${dots}<text x="159" y="126" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity=".55">start of the word → end</text></svg>`;
+  return {lim, cx, n};
+}
+function bindCurve() {
+  const l = sel && BYID[sel.id]; if (!l || sel.a === null || !$('#curveBox')) return;
+  const o = parseSpec(currentSpec(tokenize(l.text), sel.a, sel.b));
+  const neutral = !o.shape.length;
+  let pts = neutral ? [0, 0] : o.shape.slice();
+  let g = drawCurve(pts, neutral), drag = null;
+  const svgOf = () => $('#curveBox svg');
+  const valueAt = e => {
+    const r = svgOf().getBoundingClientRect(), y = (e.clientY - r.top) / r.height * 130;
+    return Math.max(-g.lim, Math.min(g.lim, Math.round((60 - y) / (50 / g.lim) * 2) / 2)) + 0;
+  };
+  const box = $('#curveBox');
+  box.onpointerdown = e => {
+    if (!svgOf()) return;
+    const r = svgOf().getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 300;
+    let best = 0; for (let i = 1; i < g.n; i++) if (Math.abs(g.cx(i) - x) < Math.abs(g.cx(best) - x)) best = i;
+    drag = best; box.setPointerCapture(e.pointerId);
+    pts[drag] = valueAt(e); g = drawCurve(pts, false); $('#curveCode').textContent = '^' + pts.map(fmtNum).join('>');
+  };
+  box.onpointermove = e => {
+    if (drag === null) return;
+    const v = valueAt(e); if (v === pts[drag]) return;
+    pts[drag] = v; g = drawCurve(pts, false); $('#curveCode').textContent = '^' + pts.map(fmtNum).join('>');
+  };
+  box.onpointerup = box.onpointercancel = () => {
+    if (drag === null) return; drag = null;
+    const shape = pts.slice();
+    editMark(o2 => { clearForm(o2); o2.shape = shape; });
+  };
+}
+function resample(p, k) {
+  if (k === 1) return [Math.round(p.reduce((a, b) => a + b, 0) / p.length * 2) / 2];
+  if (p.length === 1) p = [p[0], p[0]];
+  const out = [];
+  for (let j = 0; j < k; j++) {
+    const t = j / (k - 1) * (p.length - 1), i0 = Math.floor(t), i1 = Math.min(i0 + 1, p.length - 1);
+    out.push(Math.round((p[i0] + (p[i1] - p[i0]) * (t - i0)) * 2) / 2 + 0);
+  }
+  return out;
+}
+
+function lineInspHTML(l) {
+  const head = `<button class="ihead" data-act="line" aria-expanded="${lineOpen}" style="flex-wrap:wrap">${chev}<span class="lab">Line</span><span class="mono" style="font-weight:600">${esc(l.id)}</span><span style="font-weight:600;color:var(--s${SPK[l.who] ?? 4})">${esc(l.speaker)}</span></button>`;
+  if (!lineOpen) return head;
+  if (!l.settings) return head + `<div class="err">${l.errors.map(esc).join('<br>')}</div><div class="hint">Fix the line in Source (or its direction below).</div>
+    <label class="field"><span class="lab">Direction</span><input type="text" class="mono" data-input="direction" value="${esc(l.direction)}"></label>`;
+  const srcTag = s => `<span class="src ${s === 'line' ? 's-line' : s.includes('cast') ? 's-cast' : s.includes('ramp') ? 's-ramp' : ''}">${esc(s)}</span>`;
+  const styleBtns = STYLE_NAMES.map(n => {
+    const on = l.style === n, own = l.own_style === n;
+    return `<button class="${on && own ? 'on' : on ? 'inherited' : ''}" data-style="${n}" aria-pressed="${on}">${n}</button>`;
+  }).join('');
+  const trance = l.style === 'trance';
+  const fx = EFFECTS.map(([n, h]) => {
+    const e = (l.effects || []).find(x => x.name === n), inh = e && e.src !== 'line';
+    return `<button class="fx${e ? ' on' : ''}" data-fx="${n}" ${inh ? 'disabled' : ''}><span class="box2"></span><span style="display:flex;flex-direction:column"><b class="mono" style="font-size:13px">${n}</b><span style="font-size:12px;opacity:.85">${h}${inh ? ' · from ' + esc(e.src) : ''}</span></span></button>`;
+  }).join('');
+  const rows = SETTINGS.slice(0, moreSettings ? SETTINGS.length : 6).map(([n, hint, step]) => {
+    const s = l.settings[n], own = l.own_settings[n];
+    let eff = s.value === null ? (l.rises.length ? l.rises.map(r => r ? `+${fmtNum(r)}` : 'falls').join(', ') + ' (auto)' : 'no question') : fmtNum(s.value);
+    if (n === 'volume' && l.level_db !== s.value) eff += ` (level ${fmtNum(l.level_db)} dB)`;
+    return `<div class="srow"><span class="mono" style="font-weight:600;font-size:13px">${n}</span><span class="hint" style="font-size:12px">${hint}</span>
+      <input type="number" step="${step}" data-setting="${n}" value="${own ?? ''}" placeholder="—" aria-label="${n} for this line">
+      <span class="eff">now ${esc(eff)} · ${srcTag(s.src)}</span></div>`;
+  }).join('');
+  const take = l.settings.take.value || 0;
+  const takeBtns = [0, 1, 2, 3, 4, 5].map(v => `<button class="${take === v ? 'on' : ''}" data-take="${v}"><span class="c">${v}</span></button>`).join('');
+  const pv = (previews[l.id] || []).map((p, i) => `<div class="pv"><button class="small" data-pv="${i}">Play</button><span class="grow">take ${p.take}${p.key === l.key ? '' : ' · older version'}</span><span class="mono hint">${p.seconds} s</span></div>`).join('');
+  const cast = M.cast.find(c => c.name === l.who);
+  const layer = (k, label) => `<span>${label}</span><span style="${l.layers[k] ? '' : 'color:var(--muted)'}">${esc(l.layers[k] || '—')}${k === '@ramp' && l.ramp && l.ramp.value === null ? esc(`ramp is for ${l.ramp.for}: not applied`) : ''}${k === '@ramp' && l.ramp && l.ramp.value !== null && l.own_style ? ' (the line\'s style wins)' : ''}</span>`;
+  return head + `
+    <div class="field"><div style="display:flex;align-items:baseline;gap:8px"><span class="lab">Style</span>${srcTag(l.style_src)}<div class="grow"></div>${l.own_style ? '<button class="small" data-act="inheritstyle">Inherit</button>' : ''}</div>
+      <div class="styles">${styleBtns}</div><div class="hint">${STYLE_HINT[l.style] || ''}</div>
+      ${trance ? `<div style="display:flex;align-items:center;gap:10px"><span class="hint">Depth</span><input type="range" min="0" max="1" step="0.05" value="${l.depth ?? 0.5}" data-input="depth" ${l.own_style === 'trance' ? '' : 'disabled title="set by the ramp: pick trance to set it here"'} aria-label="Trance depth"><span class="mono" style="font-size:12px;width:36px;text-align:right" id="depthVal">${fmtNum(l.depth ?? 0.5)}</span></div>` : ''}</div>
+    <div class="field"><span class="lab">Effects</span>${fx}</div>
+    <div class="field"><span class="lab">Settings <span style="text-transform:none;letter-spacing:0;font-weight:400">(empty = inherited)</span></span><div>${rows}</div>
+      <button class="small" data-act="more" style="align-self:flex-start">${moreSettings ? 'Fewer settings' : 'More: volume, drift, floor, breath'}</button></div>
+    <div class="field"><span class="lab">Take</span><div style="display:flex;gap:8px;align-items:center"><div class="seg grow">${takeBtns}</div><button class="primary" data-act="preview">Preview</button></div>
+      <div class="hint" style="font-size:12px">A take is a different variation of the same line; try takes until one sounds right.</div>${pv}</div>
+    <div class="field"><span class="lab">How this line resolves</span><div class="chain">${layer('@defaults', '@defaults')}${layer('@cast', '@cast')}${layer('@ramp', '@ramp')}${layer('line', 'line')}</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${cast && cast.source ? `<button class="small" data-act="tune">Tune ${esc(cast.voice)} in Voices</button>` : ''}<span class="hint">${l.status === 'cached' ? 'Clip up to date.' : l.status === 'render' ? 'Needs a render.' : l.status === 'reuse' ? 'Its clip is there under another name.' : ''}</span></div>`;
+}
+
+const insp = $('#insp');
+insp.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const l = sel && BYID[sel.id];
+  const act = b.dataset.act;
+  if (act === 'panel') { panelOpen = !panelOpen; store.set('panelOpen', panelOpen); return renderInsp(); }
+  if (act === 'openword') { panelOpen = wordOpen = true; store.set('panelOpen', true); store.set('wordOpen', true); return renderInsp(); }
+  if (act === 'openline') { panelOpen = lineOpen = true; store.set('panelOpen', true); store.set('lineOpen', true); return renderInsp(); }
+  if (act === 'word') { wordOpen = !wordOpen; store.set('wordOpen', wordOpen); return renderInsp(); }
+  if (act === 'line') { lineOpen = !lineOpen; store.set('lineOpen', lineOpen); return renderInsp(); }
+  if (act === 'more') { moreSettings = !moreSettings; store.set('moreSettings', moreSettings); return renderInsp(); }
+  if (!l) return;
+  if (act === 'clear') return editMark(() => parseSpec(''));
+  if (b.dataset.stress !== undefined) return editMark(o => { clearForm(o); o.stress = +b.dataset.stress; });
+  if (b.dataset.stretch !== undefined) return editMark(o => { clearForm(o); o.stretch = +b.dataset.stretch; });
+  if (b.dataset.pause !== undefined) return editMark(o => { clearForm(o); o.pause = +b.dataset.pause; o.pauseS = 0; });
+  if (b.dataset.shape !== undefined) return editMark(o => { clearForm(o); o.shape = b.dataset.shape ? b.dataset.shape.split('>').map(Number) : []; });
+  if (act === 'addpt' || act === 'delpt') return editMark(o => {
+    clearForm(o); const p = o.shape.length ? o.shape : [0, 0];
+    o.shape = resample(p, p.length + (act === 'addpt' ? 1 : -1));
+  });
+  if (b.dataset.style) {
+    const n = b.dataset.style;
+    return editLine(l.id, x => ({direction: dirSetStyle(x.direction, n, n === 'trance' ? (x.depth ?? 0.5) : null)}));
+  }
+  if (act === 'inheritstyle') return editLine(l.id, x => ({direction: dirSetStyle(x.direction, null)}));
+  if (b.dataset.fx) return editLine(l.id, x => ({direction: dirToggle(x.direction, b.dataset.fx)}));
+  if (b.dataset.take !== undefined) return editLine(l.id, x => ({direction: dirSet(x.direction, 'take', +b.dataset.take ? +b.dataset.take : null)}));
+  if (act === 'preview') return previewLine(l.id, true);
+  if (b.dataset.pv !== undefined) return playUrl(previews[l.id][+b.dataset.pv].url);
+  if (act === 'tune') { const c = M.cast.find(c => c.name === l.who); return openVoices(c.source, l); }
+});
+insp.addEventListener('change', e => {
+  const t = e.target, l = sel && BYID[sel.id]; if (!l) return;
+  const k = t.dataset.input;
+  if (t.dataset.setting) {
+    const v = t.value.trim();
+    if (v !== '' && !isFinite(+v)) return toast('A number, please', true);
+    return editLine(l.id, x => ({direction: dirSet(x.direction, t.dataset.setting, v === '' ? null : fmtNum(+v))}));
+  }
+  if (k === 'depth') return editLine(l.id, x => ({direction: dirSetStyle(x.direction, 'trance', +t.value)}));
+  if (k === 'direction') return editLine(l.id, () => ({direction: t.value.trim()}));
+  if (k === 'pauses') return editMark(o => { clearForm(o); o.pauseS = Math.max(0, Math.min(5, +t.value || 0)); o.pause = 0; });
+  if (k === 'pron') return editMark(o => { const v = t.value.trim().replace(/^\/|\/$/g, ''); const z = parseSpec(''); if (v) z.pron = v; return z; });
+  if (k === 'say') return editMark(() => { const z = parseSpec(''); if (t.value.trim()) z.say = t.value.trim(); return z; });
+  if (k === 'silent') return editMark(() => { const z = parseSpec(''); if (t.checked) z.say = ''; return z; });
+});
+insp.addEventListener('input', e => { if (e.target.dataset.input === 'depth') $('#depthVal').textContent = fmtNum(+e.target.value); });
+
+// ================================================================== playback
+let wakeCtx = null;     // keeps the sound output awake (see mixer.html)
+function keepAudioAwake() {
+  try {
+    if (!wakeCtx) { wakeCtx = new AudioContext(); const s = wakeCtx.createConstantSource(); s.offset.value = 1 / 32768; s.connect(wakeCtx.destination); s.start(); }
+    if (wakeCtx.state === 'suspended') wakeCtx.resume().catch(() => {});
+  } catch (e) {}
+}
+for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, keepAudioAwake, {capture: true});
+function playUrl(url) { const p = $('#player'); p.src = url; p.play().catch(e => toast('Could not play: ' + e.message, true)); }
+function b64wav(b64) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return URL.createObjectURL(new Blob([a], {type: 'audio/wav'})); }
+function playLine(id, btn) {
+  const l = BYID[id]; if (!l) return;
+  if (l.status === 'cached' && l.clip) return playUrl('/clips/' + encodeURIComponent(l.clip));
+  return previewLine(id, false, btn);
+}
+async function previewLine(id, force, btn) {
+  const l = BYID[id]; if (!l) return;
+  if (l.status === 'error') return toast(`${id} has a problem to fix first`, true);
+  if (!force && l.key && previewByKey[l.key]) return playUrl(previewByKey[l.key].url);
+  btn = btn || document.querySelector(`.line[data-id="${CSS.escape(id)}"] [data-play]`);
+  if (btn) btn.classList.add('busy');
+  try {
+    const key = l.key, take = l.settings ? l.settings.take.value : 0;
+    const res = await api('/api/script/preview', {id});
+    const p = {key, url: b64wav(res.audio), seconds: res.seconds, take};
+    previewByKey[key] = p; (previews[id] = previews[id] || []).unshift(p); previews[id].length = Math.min(previews[id].length, 8);
+    playUrl(p.url);
+    if (res.unknown.length) { unknown[id] = {text: l.text, words: res.unknown}; renderSide(); }
+    if (res.unplaced.length) toast(`The mark on “${res.unplaced.join('”, “')}” did not land on a word`, true);
+    renderLines(); renderInsp();
+  } catch (e) { toast(e.message, true); }
+  finally { if (btn) btn.classList.remove('busy'); }
+}
+
+// words the phonemizer can't read: checked in the background, a few lines at a time
+let wordsBusy = false;
+async function checkWords() {
+  if (wordsBusy) return; wordsBusy = true;
+  try {
+    for (;;) {
+      const todo = LINES.filter(l => l.status !== 'error' && !(unknown[l.id] && unknown[l.id].text === l.text)).slice(0, 20);
+      if (!todo.length) break;
+      const texts = Object.fromEntries(todo.map(l => [l.id, l.text]));
+      const res = await api('/api/script/words', {ids: todo.map(l => l.id)});
+      let found = false;
+      for (const id of Object.keys(texts)) { unknown[id] = {text: texts[id], words: res[id] || []}; if ((res[id] || []).length) found = true; }
+      for (const id of Object.keys(texts)) if (!(id in res)) unknown[id] = {text: texts[id], words: []};
+      if (found) { renderSide(); renderLines(); }
+    }
+  } catch (e) {} finally { wordsBusy = false; }
+}
+
+// ================================================================== rendering the script
+let job = {running: false};
+$('#renderBtn').onclick = async () => {
+  try { job = await api('/api/script/render', {}); renderJob(); pollJob(); }
+  catch (e) { toast(e.message, true); }
+};
+$('#stopBtn').onclick = () => api('/api/script/render/stop', {}).then(() => toast('Stopping after this clip…'));
+function renderJob() {
+  const rb = $('#renderBtn');
+  rb.disabled = true; rb.textContent = job.total ? `Rendering ${job.done}/${job.total}…` : 'Rendering…';
+  $('#renderInfo').textContent = (job.log || []).slice(-1)[0] || '';
+  $('#stopBtn').hidden = false;
+}
+async function pollJob() {
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1000));
+    try { job = await api('/api/script/render'); } catch (e) { continue; }
+    if (job.running) { renderJob(); continue; }
+    await loadModel();
+    const s = job.summary;
+    if (job.error) toast('Render failed: ' + job.error, true);
+    else if (s) toast(s.interrupted ? 'Stopped: finished clips are kept.' : `Done: ${s.render} rendered, ${s.reused} reused, ${s.cached} up to date.` + (s.warnings.length ? ' ' + s.warnings.join(' · ') : ''), !!s.warnings.length);
+    return;
+  }
+}
+
+// ================================================================== source view
+const ta = $('#srcText'), hl = $('#srcHl');
+let srcDirty = false;
+function setSource(text) { ta.value = text.replace(/\r\n/g, '\n'); paintSource(); srcDirty = false; $('#srcState').textContent = 'Saved'; }
+function hlLine(line) {
+  const s = line.trimStart(), ind = esc(line.slice(0, line.length - s.length));
+  if (!s) return esc(line);
+  if (s[0] === '#') return `${ind}<span class="h-c">${esc(s)}</span>`;
+  if (/^==.*==$/.test(s)) return `${ind}<span class="h-sec">${esc(s)}</span>`;
+  if (s[0] === '@') {
+    const m = s.match(/^(@\S*)(.*)$/), rest = m[2].replace(/(\{[^}]*\})/g, '\u0000$1\u0001');
+    return `${ind}<span class="h-at">${esc(m[1])}</span>` + esc(rest).replace(/\u0000(.*?)\u0001/g, '<span class="h-dir">$1</span>');
+  }
+  const m = s.match(/^(\S+)(\s+)((?:![\w-]+\s+)*)([^{:]+?)(\s*\{[^}]*\})?(\s*:\s?)(.*)$/);
+  if (!m) return `${ind}<span class="h-bad">${esc(s)}</span>`;
+  return `${ind}<span class="h-id">${esc(m[1])}</span>${esc(m[2])}<span class="h-flag">${esc(m[3])}</span><span class="h-spk">${esc(m[4])}</span><span class="h-dir">${esc(m[5] || '')}</span>${esc(m[6])}` +
+    esc(m[7]).replace(/(\[[^\]]+\])(\([^)]*\))/g, '<span class="h-w">$1</span><span class="h-m">$2</span>');
+}
+function paintSource() { hl.innerHTML = ta.value.split('\n').map(hlLine).join('\n') + '\n'; hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; }
+ta.addEventListener('scroll', () => { hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; closeComplete(); });
+ta.addEventListener('input', () => { paintSource(); srcDirty = ta.value !== M.text.replace(/\r\n/g, '\n'); $('#srcState').textContent = srcDirty ? 'Unsaved changes' : 'Saved'; complete(); });
+ta.addEventListener('click', () => closeComplete());
+async function saveSource() {
+  if (!srcDirty) return true;
+  try {
+    const before = M.text;
+    setModel(await api('/api/script/text', {base: M.version, text: ta.value}));
+    undoStack.push(before); redoStack.length = 0; srcDirty = false; $('#srcState').textContent = 'Saved'; saveState();
+    return true;
+  } catch (e) {
+    if (e.data && e.data.conflict) {
+      if (confirm('The file changed on disk since you started editing here. Replace it with your version? (Cancel keeps your text here so you can copy it.)')) {
+        M.version = e.data.model.version; M.text = e.data.model.text; return saveSource();
+      }
+      return false;
+    }
+    toast(e.message, true); return false;
+  }
+}
+$('#srcSave').onclick = saveSource;
+$('#srcRevert').onclick = () => { if (!srcDirty || confirm('Drop your unsaved changes?')) setSource(M.text); };
+function gotoSourceLine(n) {
+  if (!n) return;
+  const lines = ta.value.split('\n'); let pos = 0;
+  for (let i = 0; i < n - 1 && i < lines.length; i++) pos += lines[i].length + 1;
+  ta.focus(); ta.setSelectionRange(pos, pos + (lines[n - 1] || '').length);
+  const lh = parseFloat(getComputedStyle(ta).lineHeight); ta.scrollTop = Math.max(0, (n - 4) * lh);
+}
+
+// completion: what fits at the caret
+const MARK_ITEMS = [['+', 'stress: a pitch lift, a little louder and longer'], ['++', 'strong stress'], ['-', 'de-stress: lower, quieter, shorter'],
+  ['--', 'stronger de-stress'], ['~', 'drawn out ×1.25'], ['~~', 'drawn out ×1.5'], ['+~', 'stressed and drawn out (marks combine)'],
+  ['^1.5', 'shift the pitch by semitones'], ['^2>-1', 'pitch glide: start 2 up, end 1 down'], ['^0>3>0', 'pitch arc'],
+  ['|', 'pause after: 0.2 s (||| = 0.6 s, up to |||||)'], ['|0.8', 'pause after: exactly 0.8 s'], ['//', 'pronounce: IPA between the slashes'], ['=', 'say different words (nothing after = is silent)']];
+const DIR_ITEMS = [...STYLE_NAMES.map(n => [n === 'trance' ? 'trance 0.6' : n, STYLE_HINT[n]]), ...EFFECTS,
+  ...SETTINGS.map(([n, h]) => [n + ' ', h]), ['take ', 'a different variation of the line']];
+const AT_ITEMS = [['@cast ', 'Name = voice | aliases {direction}'], ['@defaults ', 'a direction for every line'], ['@voices ', 'the folder voice names are looked up in'],
+  ['@pronounce ', 'Word = /ipa/'], ['@ramp trance 0.2 -> 1.0', 'change trance or a setting across one speaker\'s lines'], ['@end', 'ends a ramp']];
+let comp = null;
+function complete() {
+  const pos = ta.selectionStart; if (pos !== ta.selectionEnd) return closeComplete();
+  const lineStart = ta.value.lastIndexOf('\n', pos - 1) + 1, before = ta.value.slice(lineStart, pos);
+  let m, items, typed, title;
+  if ((m = before.match(/\]\(([^)\s]*)$/))) { typed = m[1]; items = MARK_ITEMS; title = 'Word marks'; }
+  else if (!before.trimStart().startsWith('@') && (m = before.match(/\{([^}]*)$/))) { typed = m[1].split(',').pop().trimStart(); items = DIR_ITEMS; title = 'Direction: style, effects, settings'; }
+  else if ((m = before.match(/^\s*(@\w*)$/))) { typed = m[1]; items = AT_ITEMS; title = 'Header lines'; }
+  else return closeComplete();
+  const list = items.filter(([c]) => c.startsWith(typed) && c !== typed);
+  if (!list.length) return closeComplete();
+  comp = {list, typed, i: 0};
+  const box = $('#complete');
+  box.innerHTML = `<div class="ch">${title} · <kbd>Enter</kbd> inserts, <kbd>Esc</kbd> closes</div>` + list.map(([c, h], i) => `<div class="it${i ? '' : ' on'}" data-i="${i}"><b>${esc(c.trim())}</b><span>${esc(h)}</span></div>`).join('');
+  const cs = getComputedStyle(ta), lh = parseFloat(cs.lineHeight);
+  const ctx = document.createElement('canvas').getContext('2d'); ctx.font = cs.font;
+  const row = ta.value.slice(0, pos).split('\n').length - 1;
+  const x = parseFloat(cs.paddingLeft) + ctx.measureText(before).width - ta.scrollLeft;
+  const y = parseFloat(cs.paddingTop) + (row + 1) * lh - ta.scrollTop + 4;
+  box.style.left = Math.max(4, Math.min(x, ta.clientWidth - 350)) + 'px'; box.style.top = y + 'px'; box.hidden = false;
+}
+function closeComplete() { comp = null; $('#complete').hidden = true; }
+function accept(i) {
+  const [code] = comp.list[i], pos = ta.selectionStart;
+  ta.setRangeText(code, pos - comp.typed.length, pos, 'end');
+  if (code === '//') ta.setSelectionRange(ta.selectionStart - 1, ta.selectionStart - 1);
+  closeComplete(); ta.dispatchEvent(new Event('input')); closeComplete(); ta.focus();
+}
+$('#complete').addEventListener('mousedown', e => { const it = e.target.closest('.it'); if (it) { e.preventDefault(); accept(+it.dataset.i); } });
+ta.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveSource(); return; }
+  if (!comp) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); comp.i = (comp.i + (e.key === 'ArrowDown' ? 1 : comp.list.length - 1)) % comp.list.length;
+    document.querySelectorAll('#complete .it').forEach((el, i) => el.classList.toggle('on', i === comp.i));
+    document.querySelector('#complete .it.on').scrollIntoView({block: 'nearest'});
+  } else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); accept(comp.i); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeComplete(); }
+});
+
+async function setView(v) {
+  if (v === view) return;
+  if (view === 'source' && srcDirty && !(await saveSource())) return;
+  view = v; store.set('view', v);
+  $('#vVisual').classList.toggle('on', v === 'visual'); $('#vSource').classList.toggle('on', v === 'source');
+  $('#lines').hidden = v !== 'visual'; $('#source').hidden = v !== 'source';
+  if (v === 'source') { setSource(M.text); const l = sel && BYID[sel.id]; if (l) gotoSourceLine(l.lineno); }
+  else renderLines();
+}
+$('#vVisual').onclick = () => setView('visual'); $('#vSource').onclick = () => setView('source');
+
+// ================================================================== keys (Visual)
+document.addEventListener('keydown', e => {
+  if ($('#view-script').hidden || view !== 'visual' || !M) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const k = e.key, mod = e.ctrlKey || e.metaKey;
+  if (mod && k.toLowerCase() === 'z') { e.preventDefault(); return e.shiftKey ? redo() : undo(); }
+  if (mod && k.toLowerCase() === 'y') { e.preventDefault(); return redo(); }
+  if (mod || e.altKey || !sel) return;
+  const l = BYID[sel.id]; if (!l) return;
+  const toks = tokenize(l.text), words = toks.map((t, i) => t.kind === 'word' ? i : -1).filter(i => i >= 0);
+  const hasWord = sel.a !== null;
+  const step = (dir, extend) => {
+    if (!words.length) return;
+    if (!hasWord) return select(l.id, words[dir > 0 ? 0 : words.length - 1], words[dir > 0 ? 0 : words.length - 1]);
+    const edge = dir > 0 ? sel.b : sel.a, j = words.indexOf(edge) + dir;
+    if (j < 0 || j >= words.length) return;
+    if (extend) select(l.id, dir > 0 ? sel.a : words[j], dir > 0 ? words[j] : sel.b); else select(l.id, words[j], words[j]);
+  };
+  const lineStep = dir => {
+    const i = LINES.indexOf(l) + dir; if (i < 0 || i >= LINES.length) return;
+    const n = LINES[i], nw = tokenize(n.text).map((t, x) => t.kind === 'word' ? x : -1).filter(x => x >= 0);
+    if (hasWord && nw.length) { const w = nw[Math.min(words.indexOf(sel.a), nw.length - 1)]; select(n.id, w, w); } else select(n.id, null, null);
+  };
+  const keys = {
+    ArrowRight: () => step(1, e.shiftKey), ArrowLeft: () => step(-1, e.shiftKey), ArrowDown: () => lineStep(1), ArrowUp: () => lineStep(-1),
+    ' ': () => playLine(l.id), p: () => previewLine(l.id, true),
+    Escape: () => hasWord && select(l.id, null, null)
+  };
+  if (hasWord) Object.assign(keys, {
+    '+': () => editMark(o => { clearForm(o); o.stress = Math.min(5, o.stress + 1); }), '=': () => keys['+'](),
+    '-': () => editMark(o => { clearForm(o); o.stress = Math.max(-3, o.stress - 1); }), '_': () => keys['-'](),
+    '~': () => editMark(o => { clearForm(o); o.stretch = (o.stretch + 1) % 6; }), '`': () => keys['~'](),
+    '|': () => editMark(o => { clearForm(o); o.pauseS = 0; o.pause = (o.pause + 1) % 6; }), '\\': () => keys['|'](),
+    '^': () => editMark(o => { clearForm(o); const c = o.shape.map(fmtNum).join('>'), i = PITCH.findIndex(p => p[0] === c); const nx = PITCH[(i + 1) % PITCH.length][0]; o.shape = nx ? nx.split('>').map(Number) : []; }),
+    '0': () => editMark(() => parseSpec('')), Delete: () => keys['0'](), Backspace: () => keys['0']()
+  });
+  if (keys[k]) { e.preventDefault(); keys[k](); }
+});
+
+// ================================================================== start
+(async () => {
+  try {
+    INFO = await api('/api/toolkit');
+    if (INFO.script) await loadModel();
+    else {
+      $('#tab-script').disabled = true; $('#tab-script').title = 'Start with: jivetalker edit voice_script.txt';
+      $('#tabScriptSub').textContent = 'no script open'; $('#folder').textContent = '';
+    }
+    if (INFO.script) { const want = view; view = 'visual'; await setView(want); }
+    saveState();
+    const want = location.hash.slice(1);
+    showTab(want === 'voices' || want === 'script' ? want : INFO.start);
+    try { const s = await api('/api/script/render'); if (s.running) { job = s; renderJob(); pollJob(); } } catch (e) {}
+  } catch (e) { document.body.insertAdjacentHTML('beforeend', `<div class="empty">Could not reach JiveTalker: ${esc(e.message)}</div>`); }
+})();
+</script>
+</body>
+</html>

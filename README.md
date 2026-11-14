@@ -11,6 +11,7 @@ jivetalker preview "Close your [eyes](+~)..." --voice voices/lee.pt --style "tra
 jivetalker check  voice_script.txt
 jivetalker render voice_script.txt --out voice/ --dry-run
 jivetalker render voice_script.txt --out voice/
+jivetalker edit   voice_script.txt                                  # edit the script in the browser
 jivetalker mixer  --voices-dir voices/ --script voice_script.txt     # design voices in the browser
 ```
 
@@ -44,9 +45,38 @@ the `.pth`).
 
 Tests (no model or audio needed): `python -m unittest discover -s tests`.
 
+## Editing scripts: `jivetalker edit`
+
+`jivetalker edit voice_script.txt` opens a local page (127.0.0.1 only) with two tabs: **Script**, an editor for
+the voice script, and **Voices**, the mixer below. You don't need to remember the mark syntax:
+
+- **Visual** shows every line with its speaker, its direction and its marks. Marked words show how they'll
+  sound: bold for stress, spaced out for drawn out, faded for de-stress, and a gap label for a pause. Settings
+  a line inherits from `@cast`, `@defaults` or a ramp are shown with dashed borders.
+- **Click a word** (Shift-click to take in more words) and the inspector sets its stress, draw-out, pause,
+  pronunciation or replacement words. Its pitch has a curve you shape by dragging the points. From the keyboard:
+  `+` `-` stress, `~` draw out, `|` pause, `^` pitch shapes, `0` clear, arrow keys to move, Space to play.
+- **The line** part of the inspector sets the style, effects, settings and take. It shows where each value
+  comes from (`@defaults`, `@cast`, `@ramp`, the line itself, or the style) and what the line ends up with.
+- **Play** plays the line's clip if it is up to date, or renders a preview. **Render** renders the lines that
+  changed into the clip folder (`--out`, default `voice/` next to the script), like `jivetalker render`.
+- **Source** is the file itself, with colours and a list of what fits at the cursor: marks after `[word](`,
+  directions after `{`, header lines after `@`. Ctrl+S saves.
+- The **Check** panel lists problems, words the phonemizer can't read, and lines flagged for review.
+
+The text file stays the master copy, so you can still edit it by hand or keep it in git. A change in Visual
+rewrites only the line it touches. A change made to the file elsewhere is picked up within seconds, and an
+edit made on an outdated copy is refused rather than overwriting the other change. Undo works across both
+views. Before its first change, each session copies the file to `voice_script.txt.bak`.
+
 ## Designing voices: `jivetalker mixer`
 
-A local page (127.0.0.1 only) for blending and tuning voice packs by ear. A pack's first 128 numbers set the
+The Voices tab of `jivetalker edit` (or `jivetalker mixer` on its own, which opens on that tab; with
+`--script` the Script tab is there too). *Tune … in Voices* in the Script tab opens a line's voice with that
+line as test text.
+
+
+Blending and tuning voice packs by ear. A pack's first 128 numbers set the
 **timbre** (what the voice sounds like) and the last 128 the **delivery** (intonation, pacing, energy), and
 the mixer sets each half on its own:
 
@@ -81,7 +111,7 @@ jivetalker voice build voices/mara.recipe.json -o m.pt  # rebuild a .pt from a r
 Layout: `engine.py` (the model with duration/pitch editing), `styles.py` (styles and how directions
 resolve), `marks.py` (word marks), `dsp.py` (loudness, whisper, the `internal` echo, `muffled`), `script.py`
 (the voice script), `render.py` (caching and the manifest), `voicelab.py` (recipes and axes), `mixer.py` +
-`mixer.html` (the voice mixer), `cli.py`.
+`mixer.html` (the voice mixer), `toolkit.py` + `toolkit.html` (the page with both tabs, and the script editor), `cli.py`.
 
 Bump `ENGINE_VERSION` in `__init__.py` when a change alters the sound in a way the cache key can't see
 (for example a change inside `engine.py`). Every clip is then rebuilt on the next render.
