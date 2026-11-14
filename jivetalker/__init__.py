@@ -1,6 +1,6 @@
-"""voicegen: directed voice lines from Kokoro TTS (styles, word stress, variation, effects).
+"""jivetalker: directed voice lines from Kokoro TTS (styles, word stress, variation, effects).
 
-    from voicegen import Engine, write
+    from jivetalker import Engine, write
     eng = Engine()
     r = eng.render('Close your [eyes](+)...', 'voices/lee.pt', 'trance 0.6', seed=1)
     write('line.ogg', r.audio)

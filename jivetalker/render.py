@@ -5,7 +5,7 @@ the resolved settings, the tuning constants the line actually uses (stress, `int
 loudness), the text with its marks, and the seed. Files are named `<id>_<key10>.<ext>`, so a renumbered line
 finds its old clip by key and is renamed instead of re-rendered.
 
-manifest.json:  {"voicegen": 1, "format": "ogg", "clips": {id: {"file", "key", "speaker", "text", "seconds"}}}
+manifest.json:  {"jivetalker": 1, "format": "ogg", "clips": {id: {"file", "key", "speaker", "text", "seconds"}}}
 """
 import fnmatch
 import hashlib
@@ -108,7 +108,7 @@ def load_manifest(out):
             return json.loads(p.read_text(encoding='utf-8'))
         except ValueError:
             pass
-    return {'voicegen': 1, 'clips': {}}
+    return {'jivetalker': 1, 'clips': {}}
 
 
 def save_manifest(out, manifest):
@@ -131,7 +131,7 @@ def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_di
     from .engine import resolve_format
     out = Path(out)
     fmt = resolve_format(fmt, warn=log)
-    manifest = load_manifest(out) if out.exists() else {'voicegen': 1, 'clips': {}}
+    manifest = load_manifest(out) if out.exists() else {'jivetalker': 1, 'clips': {}}
     old = manifest['clips']
     chosen = select(jobs, only)
     chosen_ids = {j.id for j in chosen}

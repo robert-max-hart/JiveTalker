@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voicegen Mixer</title>
+<title>JiveTalker Mixer</title>
 <style>
 /* Layout: a mixing desk. Two channel strips (timbre | delivery) side by side, the monitor (preview, takes,
    variations, save) in a column beside them; strips stack on narrow screens. */
@@ -97,7 +97,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
 <body>
 
 <div class="top">
-  <h1>Voicegen Mixer</h1>
+  <h1>JiveTalker Mixer</h1>
   <div class="inline">
     <label class="lab" for="loadSel">Start from</label>
     <select id="loadSel"></select>
@@ -178,7 +178,7 @@ let recipe = blank();
 let lastPos = null;
 let takeN = 0;
 
-function blank() { return {voicegen_recipe: 1, timbre: {mix: {}, axes: {}}, delivery: {mix: {}, axes: {}}}; }
+function blank() { return {jivetalker_recipe: 1, timbre: {mix: {}, axes: {}}, delivery: {mix: {}, axes: {}}}; }
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 function status(msg, err) { const s = $('#status'); s.textContent = msg; s.classList.toggle('err', !!err); }
 

@@ -4,7 +4,7 @@ A voice pack is [510, 1, 256]: one style vector per utterance length (row = phon
 numbers drive the decoder (timbre: what the voice sounds like), the last 128 the prosody predictor (delivery:
 intonation, pacing, energy). A recipe sets each half on its own:
 
-    {"voicegen_recipe": 1,
+    {"jivetalker_recipe": 1,
      "timbre":   {"mix": {"af_aoede": 0.5, "jf_tebukuro": 0.3, "af_jessica": 0.2}, "axes": {"gender": 0.4}},
      "delivery": {"mix": {"af_nicole": 1}, "axes": {"pc2": -0.8}}}
 
@@ -75,13 +75,13 @@ AXIS_NAMES = {
 
 
 def empty_recipe(source=None):
-    return {'voicegen_recipe': RECIPE_VERSION,
+    return {'jivetalker_recipe': RECIPE_VERSION,
             **{h: {'mix': {source: 1.0} if source else {}, 'axes': {}} for h in HALVES}}
 
 
 class Lab:
     def __init__(self, engine, voice_dirs=()):
-        """engine: a voicegen Engine (loads packs); voice_dirs: folders of your own .pt voices"""
+        """engine: a jivetalker Engine (loads packs); voice_dirs: folders of your own .pt voices"""
         self.eng = engine
         self.torch = engine.torch
         self.user = {}                              # display name -> path
@@ -257,7 +257,7 @@ def recipe_path(pt_path):
 
 def clean(recipe):
     """drop zero weights and zero axis amounts"""
-    out = {'voicegen_recipe': RECIPE_VERSION}
+    out = {'jivetalker_recipe': RECIPE_VERSION}
     for h in HALVES:
         part = recipe.get(h) or {}
         out[h] = {'mix': {k: float(w) for k, w in (part.get('mix') or {}).items() if float(w) != 0},
@@ -267,6 +267,7 @@ def clean(recipe):
 
 def load_recipe(path):
     r = json.loads(Path(path).read_text(encoding='utf-8'))
-    if r.get('voicegen_recipe') != RECIPE_VERSION:
-        raise ValueError(f'{path}: not a voicegen recipe (version {RECIPE_VERSION})')
+    # 'voicegen_recipe' is the marker from before the rename to JiveTalker; still read, never written
+    if r.get('jivetalker_recipe', r.get('voicegen_recipe')) != RECIPE_VERSION:
+        raise ValueError(f'{path}: not a JiveTalker recipe (version {RECIPE_VERSION})')
     return r

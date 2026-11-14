@@ -1,12 +1,12 @@
-"""voicegen command line.
+"""jivetalker command line.
 
-    voicegen preview "Close your [eyes](+)..." --voice voices/lee.pt --style "trance 0.6" -o x.ogg
-    voicegen preview --script voice_script.txt --line c1.e174 -o x.ogg
-    voicegen check voice_script.txt
-    voicegen render voice_script.txt --out voice/ [--dry-run] [--only "c1.e1*"] [--prune]
-    voicegen mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
-    voicegen voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
-    voicegen voice build voices/mara.recipe.json   rebuild a .pt from its recipe
+    jivetalker preview "Close your [eyes](+)..." --voice voices/lee.pt --style "trance 0.6" -o x.ogg
+    jivetalker preview --script voice_script.txt --line c1.e174 -o x.ogg
+    jivetalker check voice_script.txt
+    jivetalker render voice_script.txt --out voice/ [--dry-run] [--only "c1.e1*"] [--prune]
+    jivetalker mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
+    jivetalker voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
+    jivetalker voice build voices/mara.recipe.json   rebuild a .pt from its recipe
 """
 import argparse
 import sys
@@ -27,7 +27,7 @@ def cmd_preview(a):
         job = next((j for j in jobs if j.id == a.line), None)
         if not job:
             report(errors, a.script)
-            sys.exit(f'voicegen: no usable line "{a.line}" in {a.script}')
+            sys.exit(f'jivetalker: no usable line "{a.line}" in {a.script}')
         if a.style:
             from . import styles
             job.direction = styles.merge(job.direction, styles.parse_direction(a.style))
@@ -35,7 +35,7 @@ def cmd_preview(a):
         print(f'{job.id}  {job.speaker} {{{job.direction}}}: {job.text}')
     else:
         if not a.text or not a.voice:
-            sys.exit('voicegen preview: give TEXT and --voice, or --script and --line')
+            sys.exit('jivetalker preview: give TEXT and --voice, or --script and --line')
         text, voice, direction, seed = a.text, a.voice, a.style, a.seed
         if a.voices_dir and not Path(voice).suffix and not Path(voice).exists():
             voice = str(Path(a.voices_dir) / f'{voice}.pt')
@@ -83,7 +83,7 @@ def cmd_render(a):
         print(f'{len(errors)} problems in the script (fix them, or they are skipped):')
         report(errors, a.script)
         if not a.keep_going:
-            sys.exit('voicegen: nothing rendered (use --keep-going to render the good lines anyway)')
+            sys.exit('jivetalker: nothing rendered (use --keep-going to render the good lines anyway)')
     out = Path(a.out) if a.out else Path(a.script).parent / 'voice'
     s = render(jobs, out, a.format, a.dry_run, a.prune, a.only, a.model_dir)
     print_summary(s, dry_run=a.dry_run)
@@ -110,14 +110,14 @@ def cmd_voice(a):
         if a.write:
             out = voicelab.recipe_path(a.file)
             if out.exists() and not a.force:
-                sys.exit(f'voicegen: {out} exists (use --force to replace it)')
+                sys.exit(f'jivetalker: {out} exists (use --force to replace it)')
             out.write_text(json.dumps(voicelab.clean(r), indent=2) + '\n', encoding='utf-8')
             print(f'wrote {out}')
     else:
         src = Path(a.file)
         out = Path(a.output) if a.output else src.with_name(src.name.replace('.recipe.json', '') + '.pt')
         if out.exists() and not a.force:
-            sys.exit(f'voicegen: {out} exists (use -o for another name, or --force)')
+            sys.exit(f'jivetalker: {out} exists (use -o for another name, or --force)')
         pack = lab.build(voicelab.load_recipe(src), base=src.parent)
         lab.torch.save(pack, str(out))
         print(f'wrote {out}')
@@ -126,7 +126,7 @@ def cmd_voice(a):
 def main(argv=None):
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')     # Windows consoles default to a legacy code page
-    p = argparse.ArgumentParser(prog='voicegen', description=__doc__,
+    p = argparse.ArgumentParser(prog='jivetalker', description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--model-dir', help='local Kokoro model folder (config.json + .pth) for offline use')
     sub = p.add_subparsers(dest='cmd', required=True)
@@ -176,7 +176,7 @@ def main(argv=None):
     try:
         a.func(a)
     except (ValueError, FileNotFoundError) as e:
-        sys.exit(f'voicegen: {e}')
+        sys.exit(f'jivetalker: {e}')
 
 
 if __name__ == '__main__':

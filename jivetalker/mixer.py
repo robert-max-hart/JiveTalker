@@ -1,6 +1,6 @@
-"""voicegen mixer: a local web page for blending and tuning voice packs by ear.
+"""jivetalker mixer: a local web page for blending and tuning voice packs by ear.
 
-    voicegen mixer --voices-dir stories/voices [--script stories/x/voice_script.txt] [--port 8765]
+    jivetalker mixer --voices-dir voices/ [--script voice_script.txt] [--port 8765]
 
 Serves on 127.0.0.1 only. Saving writes <name>.pt and <name>.recipe.json to --save-dir (default: the first
 --voices-dir); an existing file is kept as <name>.pt.bak-<time> before it is replaced.
@@ -24,7 +24,7 @@ NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$')
 class Mixer:
     def __init__(self, voices_dirs, save_dir, script=None, model_dir=None):
         from .engine import Engine
-        print('voicegen mixer: loading Kokoro...')
+        print('jivetalker mixer: loading Kokoro...')
         self.eng = Engine(model_dir=model_dir)
         self.lab = voicelab.Lab(self.eng, voices_dirs)
         self.lab.axes()
@@ -147,7 +147,7 @@ def serve(mixer, port=8765, open_browser=True):
 
     httpd = ThreadingHTTPServer(('127.0.0.1', port), H)
     url = f'http://127.0.0.1:{port}/'
-    print(f'voicegen mixer: {url}  (Ctrl+C to stop)')
+    print(f'jivetalker mixer: {url}  (Ctrl+C to stop)')
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

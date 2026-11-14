@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "voicegen"
+name = "jivetalker"
 version = "0.1.0"
 description = "Directed voice lines from Kokoro TTS: styles, word stress, variation, effects"
 requires-python = ">=3.10"
@@ -18,10 +18,10 @@ dependencies = [
 ]
 
 [project.scripts]
-voicegen = "voicegen.cli:main"
+jivetalker = "jivetalker.cli:main"
 
 [tool.setuptools]
-packages = ["voicegen"]
+packages = ["jivetalker"]
 
 [tool.setuptools.package-data]
-voicegen = ["mixer.html"]
+jivetalker = ["mixer.html"]

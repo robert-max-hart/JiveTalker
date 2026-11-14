@@ -7,7 +7,7 @@ Kokoro has no public API for this, hence the version pin.
 
 Voice packs are [510, 1, 256]: [..., :128] = timbre (decoder), [..., 128:] = delivery/prosody (predictor).
 
-Findings behind the design (2026-11-11 experiments, see tools/voice_prototype.py in the bass repo):
+Findings behind the design (prototype experiments, 2026-11-11):
 - Kokoro is deterministic in timing and pitch (same line -> identical durations and F0). Hence `human`.
 - The predicted energy curve (N) is nearly ignored by the decoder: loudness = plain gain.
 - F0 = 0 or a sub-20 Hz F0 inside the model = gravel / audible tone.
@@ -62,7 +62,7 @@ class Engine:
         """model_dir: a folder with config.json and the .pth (offline use); default downloads from HF."""
         import kokoro
         if kokoro.__version__ != KOKORO_VERSION:
-            raise RuntimeError(f'voicegen needs kokoro=={KOKORO_VERSION} (it re-implements part of the model); '
+            raise RuntimeError(f'jivetalker needs kokoro=={KOKORO_VERSION} (it re-implements part of the model); '
                                f'found {kokoro.__version__}')
         import torch
         from kokoro import KModel, KPipeline
@@ -615,7 +615,7 @@ def resolve_format(fmt='ogg', warn=print):
         raise ValueError(f'unknown audio format "{fmt}": use ogg, wav or flac')
     if fmt == 'ogg' and not opus_available():
         if warn:
-            warn('voicegen: this soundfile/libsndfile cannot write Ogg Opus; writing .wav instead')
+            warn('jivetalker: this soundfile/libsndfile cannot write Ogg Opus; writing .wav instead')
         return 'wav'
     return fmt
 
@@ -639,7 +639,7 @@ def write(path, audio, fmt=None, warn=print):
         except OSError:
             pass
         if warn:
-            warn(f'voicegen: writing Ogg Opus failed ({e}); writing .wav instead')
+            warn(f'jivetalker: writing Ogg Opus failed ({e}); writing .wav instead')
         path = path.with_suffix('.wav')
         sf.write(str(path), audio, dsp.SR, format='WAV', subtype='PCM_16')
     return path
