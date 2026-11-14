@@ -12,6 +12,10 @@ Notes: C D E F G A B (the octave from middle C), c d e ... (one up), ' and , rai
 z is a rest; - after a note ties it to the next (one longer note); | bar lines are only for reading. Lyrics (w:): one syllable per note; - splits a word's syllables,
 _ holds the syllable before over one more note (a melisma), * leaves a note unsung (held, like _).
 
+Pitch beyond the voice: Kokoro's decoder follows a pitch only over a band around the voice's speaking pitch
+(probe_range measures it per voice, and caches it). Notes outside the band are sung at the band's edge and then
+moved to their real pitch with PSOLA (psola()), which keeps the vowels' sound but can sound synthetic.
+
 How it is sung: the words are phonemized whole (so they sound as spoken), split into syllables at their vowels,
 and timed so each syllable's vowel starts on its note: the consonants before the vowel come just before the beat,
 the ones after it at the end of the note. Pitch is set to the notes inside the model (as for speech marks), with
@@ -19,8 +23,11 @@ a short glide between notes and vibrato on long ones. Every phrase between rests
 
 Untuned by ear: the constants below are first guesses.
 """
+import json
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -31,7 +38,9 @@ CONSONANT_MAX = 0.15        # seconds: longest a single consonant may last
 CONSONANT_SHARE = 0.5       # at most this share of a note goes to consonants (the vowel needs the rest)
 GLIDE = 0.03                # seconds: pitch glide between notes (gaussian sigma)
 VIBRATO = dict(rate=5.5, depth=0.3, after=0.25, fade=0.25)  # Hz, semitones, seconds into a note, fade-in
-SUSTAIN_ENERGY = 1.5        # held vowels keep their energy at least this far below the phrase's median
+SUSTAIN_ENERGY = -2.0       # held vowels' energy (N) is kept at least at the phrase's loud level (90th percentile)
+                            # minus this: a held vowel fades to silence at speech levels (2026-11-14, measured)
+HOLD_LEVEL = dict(attack=0.08, max_gain=4.0)   # then each vowel is held at the loudness of its first `attack` s
 OPEN_VOWELS = True          # held vowels are voiced from an open, long version of the syllable (see _sing_phrase)
 OPEN_LONG = True            # ... with a length mark after the vowel
 OPEN_HOLD = 0.3             # seconds: a vowel held at least this long counts as held
@@ -40,6 +49,11 @@ OPEN_RETURN = 3             # frames at the end of a held vowel that blend back 
 # roughly an octave and a half around their speaking pitch, and not above ~300 Hz for any voice (af_bella F3-D4,
 # am_adam C2-E4, af_nicole D3-A3); above it the decoder drops an octave or the voice turns to noise.
 CEILING_HZ = 300.0
+PROBE = dict(low=36, high=76, words=('far', 'see'), length=0.8, cents=50, voiced=0.7)   # C2..E5
+BAND_MARGIN = (2, 5)        # semitones kept inside the measured band (bottom, top): sustained test notes hold
+                            # higher than notes inside a phrase do (am_adam's G4 failed in a line; D4 held)
+PROBE_VERSION = 1           # bump when singing changes in a way that moves the voices' bands
+UNVOICED_STEP = 0.005       # seconds: PSOLA grain spacing where there is no pitch (copied unchanged)
 LEAD_IN = 0.3               # seconds of silence before the first note
 TAIL = 0.4                  # seconds after the last note
 
@@ -295,8 +309,10 @@ def word_phonemes(eng, words, L):
     return out
 
 
-def sing(eng, song, voice, lang=None, seed=0):
-    """Engine + Song -> (audio, info). Phrases between rests are rendered separately and laid on the timeline."""
+def sing(eng, song, voice, lang=None, seed=0, band=None):
+    """Engine + Song -> (audio, info). Phrases between rests are rendered separately and laid on the timeline.
+    band: (lowest, highest) MIDI note the voice sings itself (see probe_range); notes outside it are sung at its
+    edge and shifted with PSOLA. None = the model sings every note itself."""
     import torch
     L = languages.get(lang)
     sung = [n for n in song.notes if n.midi is not None]
@@ -317,7 +333,9 @@ def sing(eng, song, voice, lang=None, seed=0):
     torch.manual_seed(seed)
     info = []
     for ph in phrases:
-        audio, lead, ps = _sing_phrase(eng, ph, sung, pack, L)
+        audio, lead, ps, f_sung, shift = _sing_phrase(eng, ph, sung, pack, L, band)
+        if np.any(np.abs(shift[f_sung > 0]) > 1e-4):
+            audio = psola(audio, f_sung, np.exp(shift))
         t0 = LEAD_IN + sung[ph[0].notes[0]].start
         at = int(round((t0 - lead) * dsp.SR))
         if at < 0:
@@ -329,8 +347,9 @@ def sing(eng, song, voice, lang=None, seed=0):
     return dsp.level(out, 0.0), info
 
 
-def _sing_phrase(eng, syls, sung, pack, L):
-    """one phrase -> (audio, seconds before the first note's start, phoneme string)"""
+def _sing_phrase(eng, syls, sung, pack, L, band=None):
+    """one phrase -> (audio, seconds before the first note's start, phoneme string, the pitch it was sung at
+    (Hz per F0 sample, 0 = unvoiced), the shift still to apply (natural log of the ratio, per F0 sample))"""
     import torch
     from .engine import VOICED_HZ, Engine
     m = eng.m
@@ -412,16 +431,21 @@ def _sing_phrase(eng, syls, sung, pack, L):
                     vib[inside] = amt * VIBRATO['depth'] * np.sin(2 * np.pi * VIBRATO['rate'] * age)
         import scipy.ndimage as nd
         logf = nd.gaussian_filter1d(np.log(hz), GLIDE * FPS * 2) + vib * np.log(2) / 12
+        sung_at = logf
+        if band:                                # outside the voice's band: sing at its edge, shift afterwards
+            lo, hi = (np.log(440.0 * 2 ** ((b - 69) / 12)) for b in band)
+            sung_at = nd.gaussian_filter1d(np.clip(logf, lo, hi), 1.0)
         ids_at = idx.repeat_interleave(2).numpy()
         son = np.array([0 < i <= len(ps) and (ps[i - 1] in L.SONORANT) for i in ids_at])
         voiced = (F0[0].numpy() > VOICED_HZ) | son
         quiet = (ids_at == 0) | (ids_at == len(ps) + 1)
         voiced &= ~quiet
-        f = torch.tensor(np.where(voiced, np.exp(logf), 0.0), dtype=torch.float32).view(1, -1)
+        f = torch.tensor(np.where(voiced, np.exp(sung_at), 0.0), dtype=torch.float32).view(1, -1)
 
         # ---- energy: held vowels don't fade
         Nv = N[0].numpy()
-        ref = float(np.median(Nv[voiced])) - SUSTAIN_ENERGY if voiced.any() else None
+        # relative to the phrase's loud level, not its median: on long notes most frames *are* the fading vowel
+        ref = float(np.percentile(Nv[voiced], 90)) - SUSTAIN_ENERGY if voiced.any() else None
         vowel = np.array([0 < i <= len(ps) and role[i - 1][1] == 'nucleus' for i in ids_at])
         if ref is not None:
             Nv = np.where(vowel, np.maximum(Nv, ref), Nv)
@@ -432,7 +456,29 @@ def _sing_phrase(eng, syls, sung, pack, L):
         if OPEN_VOWELS:
             asr = _open_vowels(eng, ps, role, syls, pd, asr, Lt, L)
         audio = m.decoder(asr, f, N, ref_s[:, :128]).squeeze().numpy()
-    return audio, lead_frames / FPS, ps
+    starts = np.concatenate([[0], np.cumsum(pd.numpy())])
+    spf = len(audio) / int(starts[-1])                  # audio samples per frame (600)
+    vowels = [(int(starts[k + 1] * spf), int(starts[k + 2] * spf)) for k, (i, part) in enumerate(role)
+              if part == 'nucleus']
+    audio = _hold_level(audio, vowels)
+    return audio, lead_frames / FPS, ps, f[0].numpy(), np.where(voiced, logf - sung_at, 0.0)
+
+
+def _hold_level(audio, vowels, sr=dsp.SR):
+    """a long vowel still sags in the middle (and swells into the consonant after it): hold each vowel at the
+    loudness of its start, with a smooth gain (never quieter, at most HOLD_LEVEL['max_gain'])"""
+    import scipy.ndimage as nd
+    env = np.sqrt(nd.gaussian_filter1d(audio.astype(float) ** 2, sr * 0.015)) + 1e-7
+    gain = np.ones(len(audio))
+    att = int(HOLD_LEVEL['attack'] * sr)
+    for a, b in vowels:
+        if b - a < 3 * att:
+            continue
+        want = float(np.median(env[a:a + att]))
+        g = np.clip(want / env[a + att:b], 1.0, HOLD_LEVEL['max_gain'])
+        gain[a + att:b] = np.maximum(gain[a + att:b], g)
+    gain = nd.gaussian_filter1d(gain, sr * 0.02)
+    return (audio * gain).astype(np.float32)
 
 
 def _open_vowels(eng, ps, role, syls, pd, asr, Lt, L):
@@ -475,6 +521,161 @@ def _open_vowels(eng, ps, role, syls, pd, asr, Lt, L):
             w[-n_back:] = torch.linspace(1, 0, n_back + 1)[1:]
         out[0, :, a:b] = open_v[:, None] * w[None, :] + real_v[:, None] * (1 - w[None, :])
     return out
+
+
+# ---------------------------------------------------------------------------------------------- pitch shifting
+def psola(x, f0, ratio, sr=dsp.SR):
+    """TD-PSOLA: move the pitch of x by `ratio`, keeping its timing and (roughly) its vowel sound.
+    f0: the pitch x was made at, Hz per F0 sample (0 = unvoiced); ratio: per F0 sample. Grains two periods long
+    (of the new period when shifting up), centred on pitch marks one period apart (aligned to the waveform's
+    peaks), are laid out one *new* period apart; unvoiced stretches are copied through unchanged."""
+    n = len(x)
+    per = n / len(f0)                                   # audio samples per F0 sample (300)
+    pos = (np.arange(len(f0)) + 0.5) * per
+    on = f0 > 0
+    if not on.any():
+        return x
+    filled = np.interp(np.arange(len(f0)), np.nonzero(on)[0], f0[on])        # no sag towards 0 at the edges
+    fa = np.interp(np.arange(n), pos, filled)
+    fa[np.interp(np.arange(n), pos, on.astype(float)) < 0.5] = 0.0
+    ra = np.interp(np.arange(n), pos, ratio)
+    step_u = UNVOICED_STEP * sr
+    # analysis marks
+    marks, periods, t, prev_voiced = [], [], 0.0, False
+    while t < n:
+        i = int(t)
+        if fa[i] > 0:
+            P = sr / fa[i]
+            w = max(1, int(P / (2 if not prev_voiced else 8)))
+            lo, hi = max(0, i - w), min(n, i + w + 1)
+            i = lo + int(np.argmax(x[lo:hi])) if hi > lo else i
+            marks.append(i); periods.append(P); prev_voiced = True
+            t = i + P
+        else:
+            marks.append(i); periods.append(step_u); prev_voiced = False
+            t = i + step_u
+    marks, periods = np.array(marks), np.array(periods)
+    out = np.zeros(n + 2 * int(sr * 0.05), np.float64)
+    wsum = np.zeros_like(out)
+    off = int(sr * 0.05)
+    s = float(marks[0])
+    while s < n:
+        k = int(np.clip(np.searchsorted(marks, s), 1, len(marks) - 1))
+        k = k if abs(marks[k] - s) < abs(marks[k - 1] - s) else k - 1
+        a, P = int(marks[k]), periods[k]
+        voiced = fa[a] > 0
+        rr = ra[a] if voiced else 1.0
+        # grains two periods long: of the old period, or of the new one when shifting up (else the old period
+        # stays audible under the new one; at x3 it was what a pitch tracker heard)
+        h = max(2, int(round(P / max(rr, 1.0))))
+        lo, hi = a - h, a + h + 1
+        win = np.hanning(2 * h + 1)
+        seg = np.zeros(2 * h + 1)
+        a0, a1 = max(0, lo), min(n, hi)
+        seg[a0 - lo:a1 - lo] = x[a0:a1]
+        c = int(round(s))
+        out[off + c - h:off + c + h + 1] += seg * win
+        wsum[off + c - h:off + c + h + 1] += win
+        s += P / rr
+    y = out[off:off + n] / np.maximum(wsum[off:off + n], 1e-3)
+    y[wsum[off:off + n] < 1e-3] = 0.0
+    # overlapping grains partly cancel (an octave up loses ~3 dB): match the loudness envelope of the original
+    import scipy.ndimage as nd
+    k = sr * 0.02
+    ex = np.sqrt(nd.gaussian_filter1d(x.astype(float) ** 2, k)) + 1e-6
+    ey = np.sqrt(nd.gaussian_filter1d(y ** 2, k)) + 1e-6
+    y *= np.clip(ex / ey, 0.5, 2.0)
+    return y.astype(np.float32)
+
+
+# ---------------------------------------------------------------------------------------------- measuring
+def measure(audio, song, sr=dsp.SR):
+    """pitch-track a sung line: [(cents off its note or None if unvoiced, voiced share)] per sung note, over the
+    middle of each note (10%-95%; the glide into it left out)"""
+    import librosa
+    sung = [n for n in song.notes if n.midi is not None]
+    if not sung:
+        return []
+    lo = min(n.hz for n in sung) / 1.5
+    hi = max(n.hz for n in sung) * 1.5
+    f0, vf, _ = librosa.pyin(np.asarray(audio, float), fmin=max(40, lo), fmax=min(2000, hi), sr=sr,
+                             frame_length=2048, hop_length=240)
+    t = (np.arange(len(f0)) * 240) / sr
+    out = []
+    for nt in sung:
+        sel = (t >= LEAD_IN + nt.start + 0.1 * nt.length) & (t < LEAD_IN + nt.start + 0.95 * nt.length)
+        v = f0[sel][vf[sel]] if sel.any() else np.array([])
+        share = float(vf[sel].mean()) if sel.any() else 0.0
+        out.append((float(1200 * np.log2(np.median(v) / nt.hz)) if len(v) else None, share))
+    return out
+
+
+def _cache_file():
+    base = os.environ.get('LOCALAPPDATA') or os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
+    return Path(base) / 'jivetalker' / 'voice_ranges.json'
+
+
+def probe_range(eng, voice, log=print, cache=True):
+    """the band of notes (lowest, highest MIDI) this voice sings on pitch by itself: sustained test notes from
+    PROBE['low'] to PROBE['high'], each sung on every PROBE['words'] and pitch-tracked; the longest unbroken run
+    of good notes wins. About a minute on CPU; cached per voice file (and PROBE_VERSION)."""
+    key = None
+    if cache and isinstance(voice, str):
+        from .render import file_hash
+        key = f'{file_hash(voice)}|{PROBE_VERSION}|{json.dumps(PROBE, sort_keys=True)}'
+        try:
+            got = json.loads(_cache_file().read_text(encoding='utf-8')).get(key)
+            if got:
+                return tuple(got)
+        except (OSError, ValueError):
+            pass
+    if log:
+        log(f'measuring the pitch band of {voice} (once; about a minute)...')
+    good = []
+    for midi in range(PROBE['low'], PROBE['high'] + 1):
+        ok = True
+        for w in PROBE['words']:
+            song = Song([Note(midi, 0.0, PROBE['length'])], [(w, 0)], [w])
+            y, _ = sing(eng, song, voice)
+            (c, share), = measure(y, song)
+            ok &= c is not None and abs(c) <= PROBE['cents'] and share >= PROBE['voiced']
+            if not ok:
+                break
+        good.append(ok)
+    best, run = (None, None), None
+    for i, ok in enumerate(good + [False]):
+        if ok and run is None:
+            run = i
+        elif not ok and run is not None:
+            if best[0] is None or i - run > best[1] - best[0] + 1:
+                best = (run, i - 1)
+            run = None
+    if best[0] is None:
+        raise RuntimeError(f'{voice}: no note was sung on pitch; is it a voice pack?')
+    band = (PROBE['low'] + best[0], PROBE['low'] + best[1])
+    if key:
+        f = _cache_file()
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            data = json.loads(f.read_text(encoding='utf-8')) if f.exists() else {}
+            data[key] = list(band)
+            f.write_text(json.dumps(data, indent=1), encoding='utf-8')
+        except (OSError, ValueError):
+            pass
+    return band
+
+
+def safe_band(band):
+    """the measured band with BAND_MARGIN taken off each end (what sing() should be given)"""
+    lo, hi = band[0] + BAND_MARGIN[0], band[1] - BAND_MARGIN[1]
+    return (lo, hi) if hi > lo else (band[0], band[1])
+
+
+NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
+
+
+def note_name(midi):
+    return f'{NAMES[midi % 12]}{midi // 12 - 1}'
 
 
 def guide(song, sr=dsp.SR):

@@ -103,6 +103,18 @@ jivetalker voice recipe voices/mara.pt --write        # recover a .pt's stock bl
 jivetalker voice build voices/mara.recipe.json -o m.pt  # rebuild a .pt from a recipe
 ```
 
+## Singing (experimental): `jivetalker sing`
+
+```
+jivetalker sing song.abc --voice af_bella -o song.wav --check --guide
+```
+
+The melody is written in ABC notation with a `w:` lyric line (`-` splits syllables, `_` holds one over the next
+note); `jivetalker/sing.py` lists the subset understood. Each voice sings by itself only over a band of notes
+(Kokoro's decoder was trained on speech and can't go much above middle C); the band is measured once per voice
+(about a minute, cached), and notes outside it are moved to their pitch with PSOLA, which can sound synthetic.
+`--check` pitch-tracks the result and reports each note; `--guide` also writes the melody as plain tones.
+
 ## Notes
 
 - Voices are Kokoro voice packs (`.pt`, shape [510, 1, 256]) or stock names such as `af_nicole`.

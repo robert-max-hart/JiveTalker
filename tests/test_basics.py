@@ -231,6 +231,21 @@ class Singing(unittest.TestCase):
         self.assertEqual(sing.split_word('fˈIəɹ', 1, en), [('fˈ', 'I', 'əɹ')])    # one sung syllable
         self.assertEqual(sing.split_word('ˈɛvəɹiθˌɪŋ', 3, en), [('ˈ', 'ɛ', 'və'), ('ɹ', 'i', ''), ('θˌ', 'ɪ', 'ŋ')])
 
+    def test_psola_lands_on_pitch(self):
+        import numpy as np
+        from jivetalker import sing
+        sr = 24000
+        t = np.arange(sr) / sr
+        x = sum(np.sin(2 * np.pi * 150 * h * t) * 0.9 ** h for h in range(1, 30)).astype(np.float32)
+        f0 = np.full(sr // 300, 150.0)
+        for ratio in (0.75, 2.0, 3.0):
+            y = sing.psola(x, f0, np.full(len(f0), ratio))
+            seg = y[sr // 4: 3 * sr // 4].astype(float)
+            ac = np.correlate(seg, seg, 'full')[len(seg) - 1:]
+            lag_lo = int(sr / (150 * ratio * 1.3))
+            lag = lag_lo + int(np.argmax(ac[lag_lo:int(sr / (150 * ratio / 1.3))]))
+            self.assertAlmostEqual(sr / lag, 150 * ratio, delta=150 * ratio * 0.03, msg=f'x{ratio}')
+
 
 class _no_warnings:
     def __init__(self, test):

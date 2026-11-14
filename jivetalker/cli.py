@@ -56,25 +56,46 @@ def cmd_preview(a):
 
 
 def cmd_sing(a):
+    import numpy as np
     from . import sing
     from .engine import Engine, write
     song = sing.parse_abc(Path(a.song).read_text(encoding='utf-8'), transpose=a.transpose)
     sung = [n for n in song.notes if n.midi is not None]
     lo, hi = min(n.hz for n in sung), max(n.hz for n in sung)
     print(f'{len(sung)} notes, {lo:.0f}-{hi:.0f} Hz, {sum(1 for x in song.lyrics if x)} syllables')
-    if hi > sing.CEILING_HZ:
-        print(f'  ! notes above ~{sing.CEILING_HZ:.0f} Hz (about D4) tend to drop an octave or lose their voice: '
-              f'Kokoro\'s decoder was trained on speech. Try --transpose (e.g. -12).')
     eng = Engine(model_dir=a.model_dir)
+    band = None
+    if a.band == 'auto':
+        band = sing.safe_band(sing.probe_range(eng, a.voice))
+    elif a.band != 'off':
+        try:
+            band = tuple(int(x) for x in a.band.split('-'))
+        except ValueError:
+            sys.exit('jivetalker sing: --band is auto, off, or two MIDI notes such as 50-62')
+    if band:
+        out_of = [n for n in sung if not band[0] <= n.midi <= band[1]]
+        print(f'{a.voice} sings {sing.note_name(band[0])}-{sing.note_name(band[1])} by itself'
+              + (f'; {len(out_of)} notes outside it are shifted (PSOLA)' if out_of else ''))
+    elif hi > sing.CEILING_HZ:
+        print(f'  ! notes above ~{sing.CEILING_HZ:.0f} Hz tend to drop an octave or lose their voice (try --band auto)')
     t0 = time.time()
-    audio, phrases = sing.sing(eng, song, a.voice, lang=a.lang, seed=a.seed)
+    audio, phrases = sing.sing(eng, song, a.voice, lang=a.lang, seed=a.seed, band=band)
     out = write(a.output, audio, a.format)
     print(f'{out}: {len(audio) / 24000:.1f} s  (render {time.time() - t0:.1f} s)')
     if a.verbose:
         for ps in phrases:
             print('phrase:', ps)
+    if a.check:
+        res = sing.measure(audio, song)
+        for n, (c, share) in zip(sung, res):
+            mark = '' if c is not None and abs(c) <= 50 else '   <-'
+            print(f'  {sing.note_name(n.midi):4s} at {n.start:6.2f} s: '
+                  + (f'{c:+5.0f} cents' if c is not None else 'unvoiced   ') + f', voiced {share:4.0%}{mark}')
+        ok = [abs(c) for c, _ in res if c is not None]
+        if ok:
+            print(f'  median {np.median(ok):.0f} cents off; {sum(c is None or abs(c) > 50 for c, _ in res)} of '
+                  f'{len(res)} notes off by more than 50 cents or unvoiced')
     if a.guide:
-        import numpy as np
         g = sing.guide(song)
         gp = write(Path(out).with_name(Path(out).stem + '_guide' + Path(out).suffix), g, a.format)
         n = max(len(g), len(audio))
@@ -238,6 +259,9 @@ def main(argv=None):
     sg.add_argument('--voice', required=True, help='.pt file or a stock voice')
     sg.add_argument('--lang', help='the lyric\'s language (default en)')
     sg.add_argument('--transpose', type=int, default=0, help='semitones (e.g. -12 for a low voice)')
+    sg.add_argument('--band', default='auto', help='notes the voice sings by itself; outside them PSOLA shifts: '
+                                                   'auto (measured once per voice, cached, with a safety margin), off, or MIDI LOW-HIGH')
+    sg.add_argument('--check', action='store_true', help='pitch-track the result and report each note')
     sg.add_argument('--seed', type=int, default=0)
     sg.add_argument('--guide', action='store_true', help='also write the melody as tones, alone and mixed')
     sg.add_argument('-o', '--output', default='song.wav')
