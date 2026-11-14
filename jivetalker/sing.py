@@ -11,6 +11,10 @@ Notes: C D E F G A B (the octave from middle C), c d e ... (one up), ' and , rai
 ^ sharp, _ flat, = natural (until the bar line); a number after the note multiplies its length (2, 3/2, /2, /);
 z is a rest; - after a note ties it to the next (one longer note); | bar lines are only for reading. Lyrics (w:): one syllable per note; - splits a word's syllables,
 _ holds the syllable before over one more note (a melisma), * leaves a note unsung (held, like _).
+A syllable can be written as phonemes between slashes, in misaki's notation (the one `jivetalker preview -v`
+prints): /fˈIəɹ/ for a whole word, or Twin/twˈɪŋ/-kle for one syllable: with its spelling before the slashes,
+the word is phonemized whole from its spelling (so "kle" is said as in "twinkle") and only that syllable is
+replaced. Without spellings, a word's other syllables are phonemized one by one.
 
 Pitch beyond the voice: Kokoro's decoder follows a pitch only over a band around the voice's speaking pitch
 (probe_range measures it per voice, and caches it). Notes outside the band are sung at the band's edge and then
@@ -36,6 +40,8 @@ from . import dsp, lang as languages
 FPS = 40.0                  # model duration frames per second (600 samples at 24 kHz; F0 runs at 2 per frame)
 CONSONANT_MAX = 0.15        # seconds: longest a single consonant may last
 CONSONANT_SHARE = 0.5       # at most this share of a note goes to consonants (the vowel needs the rest)
+PITCH_LEAD = 0.02           # seconds: pitch changes this much before the beat (measured: without it pitch
+                            # changes arrived +20 ms late, median; with it, 0)
 GLIDE = 0.03                # seconds: pitch glide between notes (gaussian sigma)
 VIBRATO = dict(rate=5.5, depth=0.3, after=0.25, fade=0.25)  # Hz, semitones, seconds into a note, fade-in
 SUSTAIN_ENERGY = -2.0       # held vowels' energy (N) is kept at least at the phrase's loud level (90th percentile)
@@ -53,6 +59,8 @@ PROBE = dict(low=36, high=76, words=('far', 'see'), length=0.8, cents=50, voiced
 BAND_MARGIN = (2, 5)        # semitones kept inside the measured band (bottom, top): sustained test notes hold
                             # higher than notes inside a phrase do (am_adam's G4 failed in a line; D4 held)
 PROBE_VERSION = 1           # bump when singing changes in a way that moves the voices' bands
+ONSET_BIAS_MS = 35.0        # the pitch tracker's wide window hears voicing start ~35 ms early after silence
+                            # (calibrated on the guide tones; on pitch changes it is within ~10 ms)
 UNVOICED_STEP = 0.005       # seconds: PSOLA grain spacing where there is no pitch (copied unchanged)
 LEAD_IN = 0.3               # seconds of silence before the first note
 TAIL = 0.4                  # seconds after the last note
@@ -82,6 +90,7 @@ class Song:
     lyrics: list            # [(syllable, word index)] per sung note, or None for a held note ('_' / '*')
     words: list             # the lyric's words, without hyphens
     title: str = ''
+    parts: list = None      # each word's syllables as written ('/.../' = phonemes)
 
 
 # ---------------------------------------------------------------------------------------------- ABC
@@ -173,13 +182,13 @@ def parse_abc(text, transpose=0):
         t += length
         pos = m.end()
     sung = [n for n in notes if n.midi is not None]
-    syl, words = parse_lyrics(' '.join(lyric), len(sung))
-    return Song(notes, syl, words, fields.get('T', ''))
+    syl, words, written = parse_lyrics(' '.join(lyric), len(sung))
+    return Song(notes, syl, words, fields.get('T', ''), written)
 
 
 def parse_lyrics(text, n_notes):
-    """w: text -> ([(syllable, word index) or None per sung note], [words])"""
-    out, words = [], []
+    """w: text -> ([(syllable, word index) or None per sung note], [words], [each word's syllables])"""
+    out, words, written = [], [], []
     for tok in text.replace('|', ' ').split():
         held = 0
         while tok and tok[-1] == '_':          # "star_" = star, held one more note
@@ -189,6 +198,7 @@ def parse_lyrics(text, n_notes):
         parts = tok.split('-')
         word = ''.join(parts)
         words.append(word)
+        written.append([p for p in parts if p])
         for p in parts:
             if p == '':
                 out.append(None)                # "wor--ld": an extra note on the syllable before
@@ -198,7 +208,7 @@ def parse_lyrics(text, n_notes):
     if len(out) > n_notes:
         raise ValueError(f'the lyric has {len(out)} syllables (and holds) for {n_notes} notes')
     out += [None] * (n_notes - len(out))        # a lyric shorter than the tune: the last syllable is held
-    return out, words
+    return out, words, written
 
 
 # ---------------------------------------------------------------------------------------------- syllables
@@ -266,8 +276,22 @@ def split_word(ph, n, L):
     return [tuple(x) for x in out]
 
 
+PHONEMIC_RE = re.compile(r'^([^/]*)/([^/]+)/([,.;:!?]*)$')    # spelling, phonemes, punctuation
+
+
+def is_phonemes(part):
+    return bool(PHONEMIC_RE.match(part))
+
+
+def spelling(part):
+    """what a lyric syllable spells: its text, or a phonemic syllable's spelling ('' if none was given)"""
+    m = PHONEMIC_RE.match(part)
+    return (m.group(1) + m.group(3)) if m else part
+
+
 def syllables(song, phonemes_of_words, L):
-    """Song + each word's phonemes -> [Syllable] in order, with the sung notes each one spans"""
+    """Song + each word's phonemes -> [Syllable] in order, with the sung notes each one spans.
+    A word's phonemes are a string (split here at its vowels) or a list, one string per syllable as written."""
     by_word = {}
     for k, s in enumerate(song.lyrics):
         if s:
@@ -275,7 +299,9 @@ def syllables(song, phonemes_of_words, L):
     out, first_note = [], {}
     for w, ph in enumerate(phonemes_of_words):
         ks = by_word.get(w, [])
-        parts = split_word(ph, len(ks), L)
+        if not ks:
+            continue
+        parts = split_word(ph, len(ks), L) if isinstance(ph, str) else [split_word(x, 1, L)[0] for x in ph]
         for i, (on, nu, co) in enumerate(parts):
             k = ks[i] if i < len(ks) else ks[-1]
             out.append(Syllable(on, nu, co, w, [k]))
@@ -296,16 +322,37 @@ def syllables(song, phonemes_of_words, L):
 
 
 # ---------------------------------------------------------------------------------------------- singing
-def word_phonemes(eng, words, L):
-    """each lyric word's phonemes, phonemized as one sentence (so they sound as spoken)"""
+def word_phonemes(eng, song, L):
+    """each lyric word's phonemes: the words without written phonemes are phonemized together, as one sentence
+    (so they sound as spoken); a word with phonemic syllables -> a list, one string per syllable"""
     from . import marks as marks_mod
-    toks = [t for t in eng.tokenize(marks_mod.parse(' '.join(words), L), L) if t.is_word]
-    if len(toks) == len(words):
-        return [t.phonemes for t in toks]
-    out = []                                    # the phonemizer split or joined words: one at a time
-    for w in words:
-        ts = [t for t in eng.tokenize(marks_mod.parse(w, L), L) if t.is_word]
-        out.append(''.join(t.phonemes for t in ts))
+
+    def say(text):
+        return ''.join(t.phonemes for t in eng.tokenize(marks_mod.parse(text, L), L) if t.is_word)
+    parts = song.parts or [[w] for w in song.words]
+    out = [None] * len(parts)
+    plain = [i for i, ps in enumerate(parts) if not any(is_phonemes(p) for p in ps)]
+    for i, ps in enumerate(parts):
+        if i in plain:
+            continue
+        given = [PHONEMIC_RE.match(p).group(2) if is_phonemes(p) else None for p in ps]
+        whole = None
+        if all(spelling(p).strip(',.;:!?') for p in ps):     # spelt throughout: say the word, swap in the given
+            split = split_word(say(''.join(spelling(p) for p in ps)), len(ps), L)
+            if len(split) == len(ps):
+                whole = [''.join(x) for x in split]
+        out[i] = [g if g is not None else whole[k] if whole else say(p) for k, (g, p) in enumerate(zip(given, ps))]
+    toks = [t for t in eng.tokenize(marks_mod.parse(' '.join(song.words[i] for i in plain), L), L) if t.is_word]
+    if len(toks) == len(plain):
+        for i, t in zip(plain, toks):
+            out[i] = t.phonemes
+    else:                                       # the phonemizer split or joined words: one at a time
+        for i in plain:
+            out[i] = say(song.words[i])
+    bad = sorted({c for ph in out for c in (ph if isinstance(ph, str) else ''.join(ph)) if c not in eng.vocab})
+    if bad:
+        raise ValueError(f'phonemes the model doesn\'t know: {" ".join(bad)} (write them in misaki\'s notation, '
+                         f'e.g. A for eɪ, I for aɪ, O for oʊ, ɹ for r, ɡ for g)')
     return out
 
 
@@ -316,7 +363,7 @@ def sing(eng, song, voice, lang=None, seed=0, band=None):
     import torch
     L = languages.get(lang)
     sung = [n for n in song.notes if n.midi is not None]
-    words = word_phonemes(eng, song.words, L)
+    words = word_phonemes(eng, song, L)
     syls = syllables(song, words, L)
     pack = eng.voice(voice)
     end = max((n.start + n.length for n in song.notes), default=0.0)
@@ -422,7 +469,7 @@ def _sing_phrase(eng, syls, sung, pack, L, band=None):
         for s_ in syls:
             for k in s_.notes:
                 nt = sung[k]
-                on = tsec >= nt.start
+                on = tsec >= nt.start - PITCH_LEAD
                 hz[on] = nt.hz
                 if nt.length > VIBRATO['after']:
                     inside = (tsec >= nt.start) & (tsec < nt.start + nt.length)
@@ -590,8 +637,12 @@ def psola(x, f0, ratio, sr=dsp.SR):
 
 # ---------------------------------------------------------------------------------------------- measuring
 def measure(audio, song, sr=dsp.SR):
-    """pitch-track a sung line: [(cents off its note or None if unvoiced, voiced share)] per sung note, over the
-    middle of each note (10%-95%; the glide into it left out)"""
+    """pitch-track a sung line: per sung note {'cents': off its note over the middle of it (10%-95%; None if
+    unvoiced), 'voiced': share of it voiced, 'onset_ms': when its pitch arrived, relative to its beat (None where
+    it can't be told: the same pitch as the note before, with no gap)}. Arrival = the first moment, sustained for
+    30 ms, that the pitch is nearer this note than the one before (or, after silence, that it is voiced: then
+    'after_rest' is True, and a voiced consonant sung before the beat counts as the arrival).
+    Measured 2026-11-14 with PITCH_LEAD: pitch changes land within ~20 ms of the beat (median)."""
     import librosa
     sung = [n for n in song.notes if n.midi is not None]
     if not sung:
@@ -601,12 +652,30 @@ def measure(audio, song, sr=dsp.SR):
     f0, vf, _ = librosa.pyin(np.asarray(audio, float), fmin=max(40, lo), fmax=min(2000, hi), sr=sr,
                              frame_length=2048, hop_length=240)
     t = (np.arange(len(f0)) * 240) / sr
-    out = []
+    out, prev, prev_end = [], None, None
+    logf = np.log(np.where(vf, f0, 1.0))
     for nt in sung:
         sel = (t >= LEAD_IN + nt.start + 0.1 * nt.length) & (t < LEAD_IN + nt.start + 0.95 * nt.length)
         v = f0[sel][vf[sel]] if sel.any() else np.array([])
         share = float(vf[sel].mean()) if sel.any() else 0.0
-        out.append((float(1200 * np.log2(np.median(v) / nt.hz)) if len(v) else None, share))
+        beat = LEAD_IN + nt.start
+        win = np.nonzero((t >= beat - 0.15) & (t < beat + min(0.25, 0.6 * nt.length)))[0]
+        after_gap = prev is None or nt.start - prev_end > 0.04
+        if after_gap:
+            hit = vf[win]
+        elif prev.midi != nt.midi:
+            mid = (np.log(prev.hz) + np.log(nt.hz)) / 2
+            hit = vf[win] & ((logf[win] > mid) if nt.hz > prev.hz else (logf[win] < mid))
+        else:
+            hit = None
+        onset = None
+        if hit is not None:
+            for j in range(len(win) - 2):
+                if hit[j] and hit[j + 1] and hit[j + 2]:
+                    onset = float((t[win[j]] - beat) * 1000) + (ONSET_BIAS_MS if after_gap else 0.0); break
+        out.append({'cents': float(1200 * np.log2(np.median(v) / nt.hz)) if len(v) else None, 'voiced': share,
+                    'onset_ms': onset, 'after_rest': after_gap})
+        prev, prev_end = nt, nt.start + nt.length
     return out
 
 
@@ -637,8 +706,8 @@ def probe_range(eng, voice, log=print, cache=True):
         for w in PROBE['words']:
             song = Song([Note(midi, 0.0, PROBE['length'])], [(w, 0)], [w])
             y, _ = sing(eng, song, voice)
-            (c, share), = measure(y, song)
-            ok &= c is not None and abs(c) <= PROBE['cents'] and share >= PROBE['voiced']
+            m, = measure(y, song)
+            ok &= m['cents'] is not None and abs(m['cents']) <= PROBE['cents'] and m['voiced'] >= PROBE['voiced']
             if not ok:
                 break
         good.append(ok)

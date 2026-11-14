@@ -231,6 +231,15 @@ class Singing(unittest.TestCase):
         self.assertEqual(sing.split_word('fˈIəɹ', 1, en), [('fˈ', 'I', 'əɹ')])    # one sung syllable
         self.assertEqual(sing.split_word('ˈɛvəɹiθˌɪŋ', 3, en), [('ˈ', 'ɛ', 'və'), ('ɹ', 'i', ''), ('θˌ', 'ɪ', 'ŋ')])
 
+    def test_phonemic_lyrics(self):
+        from jivetalker import lang, sing
+        song = sing.parse_abc('K:C\nC D E F G\nw: Twin/twˈɪŋ/-kle the /fˈIəɹ/,\n')
+        self.assertEqual(song.parts, [['Twin/twˈɪŋ/', 'kle'], ['the'], ['/fˈIəɹ/,']])
+        self.assertEqual([sing.spelling(p) for p in song.parts[2]], [','])
+        syls = sing.syllables(song, [['twˈɪŋ', 'kᵊl'], 'ðə', ['fˈIəɹ']], lang.get('en'))
+        self.assertEqual([(s.onset, s.nucleus, s.coda, s.notes) for s in syls],
+                         [('twˈ', 'ɪ', 'ŋ', [0]), ('k', 'ᵊ', 'l', [1]), ('ð', 'ə', '', [2]), ('fˈ', 'I', 'əɹ', [3, 4])])
+
     def test_psola_lands_on_pitch(self):
         import numpy as np
         from jivetalker import sing

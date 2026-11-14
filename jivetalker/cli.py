@@ -87,14 +87,23 @@ def cmd_sing(a):
             print('phrase:', ps)
     if a.check:
         res = sing.measure(audio, song)
-        for n, (c, share) in zip(sung, res):
-            mark = '' if c is not None and abs(c) <= 50 else '   <-'
+        for n, m in zip(sung, res):
+            c, on = m['cents'], m['onset_ms']
+            bad = c is None or abs(c) > 50 or (on is not None and abs(on) > 60 and not m['after_rest'])
+            when = ('arrives   ?   ' if on is None else f'starts  {on:+4.0f} ms (after a rest)' if m['after_rest']
+                    else f'arrives {on:+4.0f} ms')
             print(f'  {sing.note_name(n.midi):4s} at {n.start:6.2f} s: '
-                  + (f'{c:+5.0f} cents' if c is not None else 'unvoiced   ') + f', voiced {share:4.0%}{mark}')
-        ok = [abs(c) for c, _ in res if c is not None]
+                  + (f'{c:+5.0f} cents' if c is not None else 'unvoiced   ') + f', voiced {m["voiced"]:4.0%}, '
+                  + when + ('   <-' if bad else ''))
+        ok = [abs(m['cents']) for m in res if m['cents'] is not None]
+        ons = [abs(m['onset_ms']) for m in res if m['onset_ms'] is not None and not m['after_rest']]
         if ok:
-            print(f'  median {np.median(ok):.0f} cents off; {sum(c is None or abs(c) > 50 for c, _ in res)} of '
-                  f'{len(res)} notes off by more than 50 cents or unvoiced')
+            print(f'  pitch: median {np.median(ok):.0f} cents off; '
+                  f'{sum(m["cents"] is None or abs(m["cents"]) > 50 for m in res)} of {len(res)} notes off by more '
+                  f'than 50 cents or unvoiced')
+        if ons:
+            print(f'  timing of pitch changes: median {np.median(ons):.0f} ms from the beat, worst {max(ons):.0f} ms '
+                  f'({len(ons)} notes; the measure is good to ~10 ms, less next to consonants)')
     if a.guide:
         g = sing.guide(song)
         gp = write(Path(out).with_name(Path(out).stem + '_guide' + Path(out).suffix), g, a.format)
