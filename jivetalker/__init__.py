@@ -5,7 +5,7 @@
     r = eng.render('Close your [eyes](+)...', 'voices/lee.pt', 'trance 0.6', seed=1)
     write('line.ogg', r.audio)
 """
-__version__ = '0.1.0'
+__version__ = '0.2.0'
 ENGINE_VERSION = 1      # bump when the sound changes, so cached clips are rebuilt
 
 from .common import make_seed   # noqa: E402,F401
