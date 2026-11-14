@@ -57,12 +57,27 @@ def cmd_preview(a):
 
 def cmd_sing(a):
     import numpy as np
-    from . import sing
+    from . import __version__, sing
     from .engine import Engine, write
     song = sing.parse_abc(Path(a.song).read_text(encoding='utf-8'), transpose=a.transpose)
     sung = [n for n in song.notes if n.midi is not None]
     lo, hi = min(n.hz for n in sung), max(n.hz for n in sung)
     print(f'{len(sung)} notes, {lo:.0f}-{hi:.0f} Hz, {sum(1 for x in song.lyrics if x)} syllables')
+    if a.dry_run:                               # no model: which syllable goes on which note
+        notes, last = [], None
+        for k, n in enumerate(sung):
+            syl = song.lyrics[k][0] if song.lyrics[k] else None
+            last = syl or last
+            notes.append({'index': k, 'note': sing.note_name(n.midi), 'midi': n.midi, 'start': round(n.start, 3),
+                          'length': round(n.length, 3), 'syllable': syl, 'held': syl is None})
+            print(f'  {sing.note_name(n.midi):4s} at {n.start:6.2f} s, {n.length:.2f} s: '
+                  + (syl if syl else f'(holds {last})' if last else '(unsung)'))
+        if a.json:
+            import json
+            Path(a.json).write_text(json.dumps({'jivetalker': __version__, 'song': str(a.song), 'dry_run': True,
+                                                'words': song.words, 'notes': notes}, ensure_ascii=False, indent=1),
+                                    encoding='utf-8')
+        return
     eng = Engine(model_dir=a.model_dir)
     band = None
     if a.band == 'auto':
@@ -85,11 +100,25 @@ def cmd_sing(a):
     if a.verbose:
         for ps in phrases:
             print('phrase:', ps)
-    if a.check:
+    report = {'jivetalker': __version__, 'song': str(a.song), 'voice': a.voice, 'output': str(out),
+              'seconds': round(len(audio) / 24000, 2), 'transpose': a.transpose,
+              'band': {'low': band[0], 'high': band[1], 'low_name': sing.note_name(band[0]),
+                       'high_name': sing.note_name(band[1])} if band else None,
+              'shifted_notes': sum(1 for n in sung if band and not band[0] <= n.midi <= band[1]),
+              'phrases': phrases}
+    if a.check or a.json:
         res = sing.measure(audio, song)
-        for n, m in zip(sung, res):
+        notes = []
+        for k, (n, m) in enumerate(zip(sung, res)):
             c, on = m['cents'], m['onset_ms']
             bad = c is None or abs(c) > 50 or (on is not None and abs(on) > 60 and not m['after_rest'])
+            notes.append({'index': k, 'note': sing.note_name(n.midi), 'midi': n.midi, 'start': round(n.start, 3),
+                          'length': round(n.length, 3), 'syllable': song.lyrics[k][0] if song.lyrics[k] else None,
+                          'cents': None if c is None else round(c, 1), 'voiced': round(m['voiced'], 3),
+                          'onset_ms': None if on is None else round(on, 1), 'after_rest': m['after_rest'],
+                          'ok': not bad})
+            if not a.check:
+                continue
             when = ('arrives   ?   ' if on is None else f'starts  {on:+4.0f} ms (after a rest)' if m['after_rest']
                     else f'arrives {on:+4.0f} ms')
             print(f'  {sing.note_name(n.midi):4s} at {n.start:6.2f} s: '
@@ -97,11 +126,19 @@ def cmd_sing(a):
                   + when + ('   <-' if bad else ''))
         ok = [abs(m['cents']) for m in res if m['cents'] is not None]
         ons = [abs(m['onset_ms']) for m in res if m['onset_ms'] is not None and not m['after_rest']]
-        if ok:
+        off = sum(m['cents'] is None or abs(m['cents']) > 50 for m in res)
+        report['notes'] = notes
+        report['summary'] = {
+            'notes': len(res), 'notes_off_pitch': off, 'bad_notes': [x['index'] for x in notes if not x['ok']],
+            'pitch_median_cents': round(float(np.median(ok)), 1) if ok else None,
+            'timing_median_ms': round(float(np.median(ons)), 1) if ons else None,
+            'timing_worst_ms': round(float(max(ons)), 1) if ons else None,
+            'ok': all(x['ok'] for x in notes)}
+        if ok and a.check:
             print(f'  pitch: median {np.median(ok):.0f} cents off; '
                   f'{sum(m["cents"] is None or abs(m["cents"]) > 50 for m in res)} of {len(res)} notes off by more '
                   f'than 50 cents or unvoiced')
-        if ons:
+        if ons and a.check:
             print(f'  timing of pitch changes: median {np.median(ons):.0f} ms from the beat, worst {max(ons):.0f} ms '
                   f'({len(ons)} notes; the measure is good to ~10 ms, less next to consonants)')
     if a.guide:
@@ -113,6 +150,11 @@ def cmd_sing(a):
         mp = write(Path(out).with_name(Path(out).stem + '_mix' + Path(out).suffix), mix / max(1.0, np.abs(mix).max()),
                    a.format)
         print(f'{gp}, {mp}: the melody as tones, and mixed under the voice')
+        report['guide'], report['mix'] = str(gp), str(mp)
+    if a.json:
+        import json
+        Path(a.json).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding='utf-8')
+        print(f'{a.json}: report (per note: pitch in cents, voicing, arrival vs the beat)')
 
 
 def cmd_check(a):
@@ -271,6 +313,10 @@ def main(argv=None):
     sg.add_argument('--band', default='auto', help='notes the voice sings by itself; outside them PSOLA shifts: '
                                                    'auto (measured once per voice, cached, with a safety margin), off, or MIDI LOW-HIGH')
     sg.add_argument('--check', action='store_true', help='pitch-track the result and report each note')
+    sg.add_argument('--dry-run', action='store_true', help='only show which syllable goes on which note (fast, '
+                                                          'no model)')
+    sg.add_argument('--json', metavar='PATH', help='write a machine-readable report (files, band, phonemes, and the '
+                                                   'per-note check) to PATH, e.g. for scripts and AI agents')
     sg.add_argument('--seed', type=int, default=0)
     sg.add_argument('--guide', action='store_true', help='also write the melody as tones, alone and mixed')
     sg.add_argument('-o', '--output', default='song.wav')

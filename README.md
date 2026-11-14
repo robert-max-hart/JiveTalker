@@ -113,7 +113,10 @@ The melody is written in ABC notation with a `w:` lyric line (`-` splits syllabl
 note); `jivetalker/sing.py` lists the subset understood. Each voice sings by itself only over a band of notes
 (Kokoro's decoder was trained on speech and can't go much above middle C); the band is measured once per voice
 (about a minute, cached), and notes outside it are moved to their pitch with PSOLA, which can sound synthetic.
-`--check` pitch-tracks the result and reports each note; `--guide` also writes the melody as plain tones.
+Syllables can be written as phonemes: `/fˈIəɹ/`, or `Twin/twˈɪŋ/-kle` to keep the spelling.
+`--dry-run` shows which syllable goes on which note (no model, instant). `--check` pitch-tracks the result and
+reports each note's pitch and when it arrives against its beat; `--json report.json` writes all of that (files,
+band, phonemes, per-note results) for scripts and AI agents; `--guide` also writes the melody as plain tones.
 
 ## Notes
 

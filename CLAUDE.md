@@ -32,8 +32,21 @@ Kokoro TTS voice-line generator with markup. Read README.md (install, layout, mi
   (`rewrite_line`), and every edit carries the file version it was made on (`Conflict` if it is stale). The
   page is plain JS with no build step or CDN, so it works offline; the mixer stays its own page in a frame.
   Smoke-test it on a copy of a script, never on a game's real one.
+- **Singing (`sing.py`, experimental).** Pitch and timing are checked by measurement, not by ear:
+  `jivetalker sing x.abc --voice V --json report.json` pitch-tracks every note (`summary.ok`, `bad_notes`,
+  per note `cents`, `onset_ms`); keep 0 notes off by more than 50 cents on the test songs after any change.
+  How it *sounds* is still the user's call. Kokoro can't sing above ~300 Hz: notes outside a voice's band
+  (`probe_range`, cached per voice; bump `PROBE_VERSION` if singing changes move the bands) are shifted with
+  PSOLA. The constants in `sing.py` say which were measured and which are guesses.
 
 ## Running
+
+- **Singing, step by step (for agents):** write the ABC (`sing.py`'s docstring has the subset); run
+  `jivetalker sing x.abc --voice V --dry-run --json plan.json` (instant, no model) to see which syllable lands
+  on which note and fix the lyric until it matches; then render with `--json report.json` and read
+  `summary` (re-render or rewrite syllables as `/phonemes/` for `bad_notes`). Add `-v` (or read `phrases` in
+  the report) to see the phonemes each phrase was sung with. The first render of a voice measures its band
+  (about a minute). Errors exit with code 1 and one line on stderr.
 
 - Tests (no model or audio needed): `python -m unittest discover -s tests`.
 - Long renders (minutes on CPU) go in the background.
