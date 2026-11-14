@@ -1,0 +1,492 @@
+"""Singing (experimental): a melody in ABC notation with a lyric line -> a sung line.
+
+    X:1
+    L:1/4                 default note length
+    Q:1/4=96              tempo
+    K:G                   key (major or minor: G, Em, Bb, F#m ...)
+    G G d d | e e d2 | z c c B B | A A G2 |
+    w: Twin-kle twin-kle lit-tle star, _ how I won-der what you are
+
+Notes: C D E F G A B (the octave from middle C), c d e ... (one up), ' and , raise or lower an octave;
+^ sharp, _ flat, = natural (until the bar line); a number after the note multiplies its length (2, 3/2, /2, /);
+z is a rest; - after a note ties it to the next (one longer note); | bar lines are only for reading. Lyrics (w:): one syllable per note; - splits a word's syllables,
+_ holds the syllable before over one more note (a melisma), * leaves a note unsung (held, like _).
+
+How it is sung: the words are phonemized whole (so they sound as spoken), split into syllables at their vowels,
+and timed so each syllable's vowel starts on its note: the consonants before the vowel come just before the beat,
+the ones after it at the end of the note. Pitch is set to the notes inside the model (as for speech marks), with
+a short glide between notes and vibrato on long ones. Every phrase between rests is rendered on its own.
+
+Untuned by ear: the constants below are first guesses.
+"""
+import re
+from dataclasses import dataclass, field
+
+import numpy as np
+
+from . import dsp, lang as languages
+
+FPS = 40.0                  # model duration frames per second (600 samples at 24 kHz; F0 runs at 2 per frame)
+CONSONANT_MAX = 0.15        # seconds: longest a single consonant may last
+CONSONANT_SHARE = 0.5       # at most this share of a note goes to consonants (the vowel needs the rest)
+GLIDE = 0.03                # seconds: pitch glide between notes (gaussian sigma)
+VIBRATO = dict(rate=5.5, depth=0.3, after=0.25, fade=0.25)  # Hz, semitones, seconds into a note, fade-in
+SUSTAIN_ENERGY = 1.5        # held vowels keep their energy at least this far below the phrase's median
+OPEN_VOWELS = True          # held vowels are voiced from an open, long version of the syllable (see _sing_phrase)
+OPEN_LONG = True            # ... with a length mark after the vowel
+OPEN_HOLD = 0.3             # seconds: a vowel held at least this long counts as held
+OPEN_RETURN = 3             # frames at the end of a held vowel that blend back to its real context (into the coda)
+# Measured 2026-11-14 (sustained notes, pitch-tracked): voices follow the notes within a few cents over a band of
+# roughly an octave and a half around their speaking pitch, and not above ~300 Hz for any voice (af_bella F3-D4,
+# am_adam C2-E4, af_nicole D3-A3); above it the decoder drops an octave or the voice turns to noise.
+CEILING_HZ = 300.0
+LEAD_IN = 0.3               # seconds of silence before the first note
+TAIL = 0.4                  # seconds after the last note
+
+NOTE_STEPS = dict(C=0, D=2, E=4, F=5, G=7, A=9, B=11)
+SHARPS = 'FCGDAEB'          # order of sharps (and, reversed, of flats) in key signatures
+MAJOR_KEYS = {'C': 0, 'G': 1, 'D': 2, 'A': 3, 'E': 4, 'B': 5, 'F#': 6, 'C#': 7,
+              'F': -1, 'Bb': -2, 'Eb': -3, 'Ab': -4, 'Db': -5, 'Gb': -6, 'Cb': -7}
+MINOR_KEYS = {'A': 0, 'E': 1, 'B': 2, 'F#': 3, 'C#': 4, 'G#': 5, 'D#': 6, 'A#': 7,
+              'D': -1, 'G': -2, 'C': -3, 'F': -4, 'Bb': -5, 'Eb': -6, 'Ab': -7}
+
+
+@dataclass
+class Note:
+    midi: int               # None = rest
+    start: float            # seconds
+    length: float           # seconds
+
+    @property
+    def hz(self):
+        return 440.0 * 2 ** ((self.midi - 69) / 12)
+
+
+@dataclass
+class Song:
+    notes: list             # [Note], rests included
+    lyrics: list            # [(syllable, word index)] per sung note, or None for a held note ('_' / '*')
+    words: list             # the lyric's words, without hyphens
+    title: str = ''
+
+
+# ---------------------------------------------------------------------------------------------- ABC
+def key_accidentals(key):
+    """K: field -> {letter: semitone shift}"""
+    k = (key or 'C').split()[0] if (key or '').strip() else 'C'
+    m = re.match(r'^([A-G][b#]?)(m|min|maj)?$', k)
+    if not m:
+        raise ValueError(f'K:{key}: use a major or minor key such as G, Em, Bb or F#m')
+    n = (MINOR_KEYS if m.group(2) in ('m', 'min') else MAJOR_KEYS).get(m.group(1))
+    if n is None:
+        raise ValueError(f'K:{key}: not a key signature')
+    return {c: 1 for c in SHARPS[:n]} if n >= 0 else {c: -1 for c in SHARPS[::-1][:-n]}
+
+
+def _length(s):
+    """'2', '3/2', '/2', '/', '' -> multiplier"""
+    if not s:
+        return 1.0
+    if '/' not in s:
+        return float(s)
+    a, _, b = s.partition('/')
+    return (float(a) if a else 1.0) / (float(b) if b else 2.0)
+
+
+NOTE_RE = re.compile(r"(\^\^|\^|__|_|=)?([A-Ga-gz])([',]*)(\d*/?\d*)")
+
+
+def parse_abc(text, transpose=0):
+    """ABC (one voice, the subset in the module doc) -> Song. transpose: semitones."""
+    fields, body, lyric = {}, [], []
+    for raw in text.splitlines():
+        s = raw.split('%')[0].strip()
+        if not s:
+            continue
+        if re.match(r'^w:', s):
+            lyric.append(s[2:].strip())
+        elif re.match(r'^[A-Za-z]:', s):
+            fields[s[0]] = s[2:].strip()
+        else:
+            body.append(s)
+    unit = 1 / 8
+    if fields.get('L'):
+        a, _, b = fields['L'].partition('/')
+        unit = float(a) / float(b or 1)
+    beat, bpm = 1 / 4, 120.0
+    if fields.get('Q'):
+        m = re.match(r'^(?:(\d+)/(\d+)\s*=\s*)?(\d+(?:\.\d+)?)$', fields['Q'].replace(' ', ''))
+        if not m:
+            raise ValueError(f'Q:{fields["Q"]}: write the tempo as e.g. 1/4=96')
+        if m.group(1):
+            beat = int(m.group(1)) / int(m.group(2))
+        bpm = float(m.group(3))
+    sec_per_unit = unit / beat * 60.0 / bpm
+    key = key_accidentals(fields.get('K'))
+
+    notes, t, bar, tie = [], 0.0, {}, False
+    music = ' '.join(body)
+    pos = 0
+    while pos < len(music):
+        ch = music[pos]
+        if ch == '-':                           # a tie: the next note of the same pitch lengthens this one
+            tie = True; pos += 1; continue
+        if ch in ' |:[]':
+            if ch == '|':
+                bar = {}
+            pos += 1; continue
+        m = NOTE_RE.match(music, pos)
+        if not m:
+            raise ValueError(f'not understood in the notes: "{music[pos:pos + 10]}"')
+        acc, letter, octs, ln = m.groups()
+        length = _length(ln) * sec_per_unit
+        if letter == 'z':
+            notes.append(Note(None, t, length))
+        else:
+            up = letter.upper()
+            octave = 5 if letter.islower() else 4
+            octave += octs.count("'") - octs.count(',')
+            if acc:
+                shift = {'^': 1, '^^': 2, '_': -1, '__': -2, '=': 0}[acc]
+                bar[(up, octave)] = shift
+            shift = bar.get((up, octave), key.get(up, 0))
+            midi = 12 * (octave + 1) + NOTE_STEPS[up] + shift + transpose
+            if tie and notes and notes[-1].midi == midi:
+                notes[-1].length += length
+            else:
+                notes.append(Note(midi, t, length))
+        tie = False
+        t += length
+        pos = m.end()
+    sung = [n for n in notes if n.midi is not None]
+    syl, words = parse_lyrics(' '.join(lyric), len(sung))
+    return Song(notes, syl, words, fields.get('T', ''))
+
+
+def parse_lyrics(text, n_notes):
+    """w: text -> ([(syllable, word index) or None per sung note], [words])"""
+    out, words = [], []
+    for tok in text.replace('|', ' ').split():
+        held = 0
+        while tok and tok[-1] == '_':          # "star_" = star, held one more note
+            tok = tok[:-1]; held += 1
+        if tok in ('', '*'):
+            out += [None] * (held + (1 if tok == '*' else 0)); continue
+        parts = tok.split('-')
+        word = ''.join(parts)
+        words.append(word)
+        for p in parts:
+            if p == '':
+                out.append(None)                # "wor--ld": an extra note on the syllable before
+            else:
+                out.append((p, len(words) - 1))
+        out += [None] * held
+    if len(out) > n_notes:
+        raise ValueError(f'the lyric has {len(out)} syllables (and holds) for {n_notes} notes')
+    out += [None] * (n_notes - len(out))        # a lyric shorter than the tune: the last syllable is held
+    return out, words
+
+
+# ---------------------------------------------------------------------------------------------- syllables
+@dataclass
+class Syllable:
+    onset: str
+    nucleus: str
+    coda: str
+    word: int
+    notes: list = field(default_factory=list)   # indices into the sung notes
+
+
+ONSETS2 = {'st', 'sp', 'sk', 'sm', 'sn', 'sl', 'sw'} | {a + b for a in 'pbtdkɡfθʃ' for b in 'ɹlwj'}
+
+
+def split_word(ph, n, L):
+    """a word's phonemes -> n (onset, nucleus, coda) syllables, split at the vowels.
+    Too many vowels: of the closest pair (reduced vowels first), the weaker one is sung as part of the other's
+    syllable. Too few: the caller holds the last one."""
+    stress = set('ˈˌ')
+    nuclei = []                                 # [start, end) of each vowel (with a length mark after it)
+    i = 0
+    while i < len(ph):
+        if ph[i] in L.VOWELS:
+            j = i + 1
+            while j < len(ph) and ph[j] == 'ː':
+                j += 1
+            nuclei.append([i, j]); i = j
+        else:
+            i += 1
+    if not nuclei:
+        return [('', ph, '')]
+    reduced = set('əᵊɪᵻ')
+    while len(nuclei) > max(n, 1):
+        def cost(k):
+            gap = nuclei[k + 1][0] - nuclei[k][1]
+            red = ph[nuclei[k][0]] in reduced or ph[nuclei[k + 1][0]] in reduced
+            return gap * 2 + (0 if red else 1)
+        k = min(range(len(nuclei) - 1), key=cost)
+        # the weaker vowel of the pair stops being a syllable of its own: it is sung at its natural length,
+        # next to the vowel that holds the note ("fire" = fI + əɹ)
+        drop = k if ph[nuclei[k][0]] in reduced and ph[nuclei[k + 1][0]] not in reduced else k + 1
+        del nuclei[drop]
+    out, prev_end = [], 0
+    for k, (a, b) in enumerate(nuclei):
+        # the consonants between this vowel and the last: the next syllable takes one (two if a usual onset)
+        if k == 0:
+            onset = ph[:a]
+        else:
+            cl = ph[prev_end:a]
+            core = cl.replace('ˈ', '').replace('ˌ', '')
+            take = 2 if core[-2:] in ONSETS2 and len(core) >= 2 else (1 if core else 0)
+            cut = len(cl)
+            while take and cut > 0:
+                cut -= 1
+                if cl[cut] not in stress:
+                    take -= 1
+            while cut > 0 and cl[cut - 1] in stress:    # a stress mark stays with its syllable
+                cut -= 1
+            out[-1][2] = cl[:cut]
+            onset = cl[cut:]
+        out.append([onset, ph[a:b], ''])
+        prev_end = b
+    out[-1][2] = ph[prev_end:]
+    return [tuple(x) for x in out]
+
+
+def syllables(song, phonemes_of_words, L):
+    """Song + each word's phonemes -> [Syllable] in order, with the sung notes each one spans"""
+    by_word = {}
+    for k, s in enumerate(song.lyrics):
+        if s:
+            by_word.setdefault(s[1], []).append(k)
+    out, first_note = [], {}
+    for w, ph in enumerate(phonemes_of_words):
+        ks = by_word.get(w, [])
+        parts = split_word(ph, len(ks), L)
+        for i, (on, nu, co) in enumerate(parts):
+            k = ks[i] if i < len(ks) else ks[-1]
+            out.append(Syllable(on, nu, co, w, [k]))
+            first_note[k] = out[-1]
+        for k in ks[len(parts):]:               # more sung syllables than vowels: the last vowel holds
+            out[-1].notes.append(k)
+    by_note = {}
+    for syl in out:
+        for k in syl.notes:
+            by_note[k] = syl
+    last = None
+    for k, s in enumerate(song.lyrics):         # held notes (_ and *) join the syllable sung before them
+        if k in by_note:
+            last = by_note[k]
+        elif last is not None:
+            last.notes.append(k)
+    return out
+
+
+# ---------------------------------------------------------------------------------------------- singing
+def word_phonemes(eng, words, L):
+    """each lyric word's phonemes, phonemized as one sentence (so they sound as spoken)"""
+    from . import marks as marks_mod
+    toks = [t for t in eng.tokenize(marks_mod.parse(' '.join(words), L), L) if t.is_word]
+    if len(toks) == len(words):
+        return [t.phonemes for t in toks]
+    out = []                                    # the phonemizer split or joined words: one at a time
+    for w in words:
+        ts = [t for t in eng.tokenize(marks_mod.parse(w, L), L) if t.is_word]
+        out.append(''.join(t.phonemes for t in ts))
+    return out
+
+
+def sing(eng, song, voice, lang=None, seed=0):
+    """Engine + Song -> (audio, info). Phrases between rests are rendered separately and laid on the timeline."""
+    import torch
+    L = languages.get(lang)
+    sung = [n for n in song.notes if n.midi is not None]
+    words = word_phonemes(eng, song.words, L)
+    syls = syllables(song, words, L)
+    pack = eng.voice(voice)
+    end = max((n.start + n.length for n in song.notes), default=0.0)
+    out = np.zeros(int((LEAD_IN + end + TAIL + 2.0) * dsp.SR), np.float32)
+    phrases, cur = [], []
+    for syl in syls:                            # a rest between two syllables' notes starts a new phrase
+        if cur:
+            prev_end = sung[cur[-1].notes[-1]].start + sung[cur[-1].notes[-1]].length
+            if sung[syl.notes[0]].start - prev_end > 1e-6:
+                phrases.append(cur); cur = []
+        cur.append(syl)
+    if cur:
+        phrases.append(cur)
+    torch.manual_seed(seed)
+    info = []
+    for ph in phrases:
+        audio, lead, ps = _sing_phrase(eng, ph, sung, pack, L)
+        t0 = LEAD_IN + sung[ph[0].notes[0]].start
+        at = int(round((t0 - lead) * dsp.SR))
+        if at < 0:
+            audio, at = audio[-at:], 0
+        out[at:at + len(audio)] += audio[:len(out) - at]
+        info.append(ps)
+    last = np.nonzero(np.abs(out) > 1e-4)[0]
+    out = out[:last[-1] + int(0.05 * dsp.SR)] if len(last) else out
+    return dsp.level(out, 0.0), info
+
+
+def _sing_phrase(eng, syls, sung, pack, L):
+    """one phrase -> (audio, seconds before the first note's start, phoneme string)"""
+    import torch
+    from .engine import VOICED_HZ, Engine
+    m = eng.m
+    # ---- the phoneme string, and what each id is
+    ps, role = '', []                           # role per character: (syllable index, part)
+    for i, s in enumerate(syls):
+        if i and s.word != syls[i - 1].word:
+            ps += ' '; role.append((i - 1, 'space'))
+        for part in ('onset', 'nucleus', 'coda'):
+            for c in getattr(s, part):
+                if c in eng.vocab:
+                    ps += c; role.append((i, part))
+    ps = ps[:510]; role = role[:510]
+    ids = torch.LongTensor([[0] + [eng.vocab[c] for c in ps] + [0]])
+    ref_s = pack[len(ps) - 1]
+    s = ref_s[:, 128:]
+    Lt = torch.full((1,), ids.shape[-1], dtype=torch.long)
+    mask = torch.gt(torch.arange(Lt.max()).unsqueeze(0) + 1, Lt.unsqueeze(1))
+    with torch.no_grad():
+        d_en = m.bert_encoder(m.bert(ids, attention_mask=(~mask).int())).transpose(-1, -2)
+        d = m.predictor.text_encoder(d_en, s, Lt, mask)
+        x, _ = m.predictor.lstm(d)
+        natural = torch.sigmoid(m.predictor.duration_proj(x)).sum(axis=-1).squeeze(0)
+
+        # ---- durations: each vowel starts on its note; consonants keep their length, before/after it
+        nat = natural.numpy().astype(float)
+        dur = nat.copy()
+        cmax = CONSONANT_MAX * FPS
+        t_first = sung[syls[0].notes[0]].start
+        note_at = [(sung[s.notes[0]].start - t_first) * FPS for s in syls]        # vowel starts, phrase frames
+        last = sung[syls[-1].notes[-1]]
+        phrase_end = (last.start + last.length - t_first) * FPS
+        ids_of = {}
+        for k, (i, part) in enumerate(role):
+            ids_of.setdefault((i, part), []).append(k + 1)                          # +1: the leading pad
+        for k in range(1, len(ps) + 1):
+            dur[k] = min(nat[k], cmax) if role[k - 1][1] != 'nucleus' else nat[k]
+        for k in range(1, len(ps) + 1):
+            if role[k - 1][1] == 'space':
+                dur[k] = 1.0
+        for i in range(len(syls)):
+            start = note_at[i]
+            stop = note_at[i + 1] if i + 1 < len(syls) else phrase_end
+            between = ids_of.get((i, 'coda'), []) + ids_of.get((i, 'space'), []) + \
+                (ids_of.get((i + 1, 'onset'), []) if i + 1 < len(syls) else [])
+            span = max(stop - start, 2.0)
+            cons = sum(dur[k] for k in between)
+            if cons > span * CONSONANT_SHARE:
+                for k in between:
+                    dur[k] *= span * CONSONANT_SHARE / cons
+                cons = span * CONSONANT_SHARE
+            vow = ids_of.get((i, 'nucleus'), [])
+            tot = sum(nat[k] for k in vow) or 1.0
+            for k in vow:
+                dur[k] = (span - cons) * nat[k] / tot
+        dur[-1] = max(dur[-1], 2.0)
+        lead_frames = float(dur[0] + sum(dur[k] for k in ids_of.get((0, 'onset'), [])))
+        dur_t = torch.tensor(dur, dtype=torch.float32)
+        pd = Engine.frames(dur_t)
+        pd_n = Engine.frames(natural)
+        idx, aln = Engine.alignment(pd)
+        F0, N = m.predictor.F0Ntrain(d.transpose(-1, -2) @ Engine.alignment(pd_n)[1], s)
+        F0, N = Engine.retime(F0, pd_n, pd), Engine.retime(N, pd_n, pd)
+
+        # ---- pitch: the notes, on voiced sounds
+        n_s = F0.shape[-1]
+        tsec = (np.arange(n_s) / 2.0 - lead_frames) / FPS + t_first                  # song time of each sample
+        hz = np.full(n_s, sung[syls[0].notes[0]].hz)
+        vib = np.zeros(n_s)
+        for s_ in syls:
+            for k in s_.notes:
+                nt = sung[k]
+                on = tsec >= nt.start
+                hz[on] = nt.hz
+                if nt.length > VIBRATO['after']:
+                    inside = (tsec >= nt.start) & (tsec < nt.start + nt.length)
+                    age = tsec[inside] - nt.start - VIBRATO['after']
+                    amt = np.clip(age / VIBRATO['fade'], 0, 1)
+                    vib[inside] = amt * VIBRATO['depth'] * np.sin(2 * np.pi * VIBRATO['rate'] * age)
+        import scipy.ndimage as nd
+        logf = nd.gaussian_filter1d(np.log(hz), GLIDE * FPS * 2) + vib * np.log(2) / 12
+        ids_at = idx.repeat_interleave(2).numpy()
+        son = np.array([0 < i <= len(ps) and (ps[i - 1] in L.SONORANT) for i in ids_at])
+        voiced = (F0[0].numpy() > VOICED_HZ) | son
+        quiet = (ids_at == 0) | (ids_at == len(ps) + 1)
+        voiced &= ~quiet
+        f = torch.tensor(np.where(voiced, np.exp(logf), 0.0), dtype=torch.float32).view(1, -1)
+
+        # ---- energy: held vowels don't fade
+        Nv = N[0].numpy()
+        ref = float(np.median(Nv[voiced])) - SUSTAIN_ENERGY if voiced.any() else None
+        vowel = np.array([0 < i <= len(ps) and role[i - 1][1] == 'nucleus' for i in ids_at])
+        if ref is not None:
+            Nv = np.where(vowel, np.maximum(Nv, ref), Nv)
+        N = torch.tensor(Nv, dtype=N.dtype).view(1, -1)
+
+        t_en = m.text_encoder(ids, Lt, mask)
+        asr = t_en @ aln
+        if OPEN_VOWELS:
+            asr = _open_vowels(eng, ps, role, syls, pd, asr, Lt, L)
+        audio = m.decoder(asr, f, N, ref_s[:, :128]).squeeze().numpy()
+    return audio, lead_frames / FPS, ps
+
+
+def _open_vowels(eng, ps, role, syls, pd, asr, Lt, L):
+    """A vowel held on a note is heard through the text encoder's view of it in its spoken context: before a
+    stop ("what", "lit-") that view already closes off (a glottal catch), and held long it turns to noise. For
+    held vowels, the decoder gets the vowel as the encoder sees it in an open, long syllable (V + length mark, the
+    voiceless consonants after it left out), blending back to the real context over the last OPEN_RETURN frames."""
+    import torch
+    m = eng.m
+    pdn = pd.numpy()
+    starts = np.concatenate([[0], np.cumsum(pdn)])
+    held = [k for k, (i, part) in enumerate(role) if part == 'nucleus' and pdn[k + 1] >= OPEN_HOLD * FPS]
+    if not held:
+        return asr
+    ps2, where, skip = '', {}, set()
+    for k, (i, part) in enumerate(role):
+        if k in skip:
+            continue
+        ps2 += ps[k]
+        if k in held:
+            where[k] = len(ps2)                 # +1 for the pad, -1 for the index: the same number
+            if OPEN_LONG and 'ː' in eng.vocab:
+                ps2 += 'ː'
+            j = k + 1                           # leave out the voiceless consonants closing its syllable
+            while j < len(role) and role[j][0] == i and role[j][1] == 'coda':
+                if ps[j] not in L.SONORANT:
+                    skip.add(j)
+                j += 1
+    ids2 = torch.LongTensor([[0] + [eng.vocab[c] for c in ps2] + [0]])
+    L2 = torch.full((1,), ids2.shape[-1], dtype=torch.long)
+    mask2 = torch.gt(torch.arange(L2.max()).unsqueeze(0) + 1, L2.unsqueeze(1))
+    t2 = m.text_encoder(ids2, L2, mask2)
+    out = asr.clone()
+    for k in held:
+        a, b = int(starts[k + 1]), int(starts[k + 2])          # the vowel's frames (k + 1: the pad)
+        open_v, real_v = t2[0, :, where[k]], asr[0, :, b - 1]
+        n_back = min(OPEN_RETURN, b - a)
+        w = torch.ones(b - a)
+        if n_back:
+            w[-n_back:] = torch.linspace(1, 0, n_back + 1)[1:]
+        out[0, :, a:b] = open_v[:, None] * w[None, :] + real_v[:, None] * (1 - w[None, :])
+    return out
+
+
+def guide(song, sr=dsp.SR):
+    """a plain tone track of the melody (to hear whether the voice is on pitch and on time)"""
+    end = max((n.start + n.length for n in song.notes), default=0.0)
+    out = np.zeros(int((LEAD_IN + end + TAIL) * sr), np.float32)
+    for n in song.notes:
+        if n.midi is None:
+            continue
+        t = np.arange(int(n.length * sr)) / sr
+        env = np.minimum(1, t / 0.01) * np.minimum(1, (n.length - t) / 0.03)
+        tone = sum(np.sin(2 * np.pi * n.hz * h * t) / h ** 1.5 for h in (1, 2, 3, 4))
+        a = int((LEAD_IN + n.start) * sr)
+        out[a:a + len(t)] += (0.2 * env * tone).astype(np.float32)[:len(out) - a]
+    return out

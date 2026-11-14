@@ -8,6 +8,7 @@
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
     jivetalker voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
     jivetalker voice build voices/mara.recipe.json   rebuild a .pt from its recipe
+    jivetalker sing song.abc --voice af_bella -o song.wav [--transpose -12] [--guide]   (experimental)
 """
 import argparse
 import sys
@@ -52,6 +53,36 @@ def cmd_preview(a):
         print(f'  ! the phonemizer could not read "{w}": respell it, e.g. [{w}](/.../)')
     for w in r.unplaced_marks:
         print(f'  ! the mark on "{w}" did not land on a word')
+
+
+def cmd_sing(a):
+    from . import sing
+    from .engine import Engine, write
+    song = sing.parse_abc(Path(a.song).read_text(encoding='utf-8'), transpose=a.transpose)
+    sung = [n for n in song.notes if n.midi is not None]
+    lo, hi = min(n.hz for n in sung), max(n.hz for n in sung)
+    print(f'{len(sung)} notes, {lo:.0f}-{hi:.0f} Hz, {sum(1 for x in song.lyrics if x)} syllables')
+    if hi > sing.CEILING_HZ:
+        print(f'  ! notes above ~{sing.CEILING_HZ:.0f} Hz (about D4) tend to drop an octave or lose their voice: '
+              f'Kokoro\'s decoder was trained on speech. Try --transpose (e.g. -12).')
+    eng = Engine(model_dir=a.model_dir)
+    t0 = time.time()
+    audio, phrases = sing.sing(eng, song, a.voice, lang=a.lang, seed=a.seed)
+    out = write(a.output, audio, a.format)
+    print(f'{out}: {len(audio) / 24000:.1f} s  (render {time.time() - t0:.1f} s)')
+    if a.verbose:
+        for ps in phrases:
+            print('phrase:', ps)
+    if a.guide:
+        import numpy as np
+        g = sing.guide(song)
+        gp = write(Path(out).with_name(Path(out).stem + '_guide' + Path(out).suffix), g, a.format)
+        n = max(len(g), len(audio))
+        mix = np.zeros(n, np.float32)
+        mix[:len(audio)] += audio; mix[:len(g)] += 0.5 * g
+        mp = write(Path(out).with_name(Path(out).stem + '_mix' + Path(out).suffix), mix / max(1.0, np.abs(mix).max()),
+                   a.format)
+        print(f'{gp}, {mp}: the melody as tones, and mixed under the voice')
 
 
 def cmd_check(a):
@@ -202,6 +233,17 @@ def main(argv=None):
     vo.add_argument('--write', action='store_true', help='recipe: save it as <name>.recipe.json next to the .pt')
     vo.add_argument('--force', action='store_true', help='replace an existing output file')
     vo.set_defaults(func=cmd_voice)
+    sg = sub.add_parser('sing', help='sing a melody (ABC notation with a w: lyric line); experimental')
+    sg.add_argument('song', help='an .abc file: see jivetalker/sing.py for the subset understood')
+    sg.add_argument('--voice', required=True, help='.pt file or a stock voice')
+    sg.add_argument('--lang', help='the lyric\'s language (default en)')
+    sg.add_argument('--transpose', type=int, default=0, help='semitones (e.g. -12 for a low voice)')
+    sg.add_argument('--seed', type=int, default=0)
+    sg.add_argument('--guide', action='store_true', help='also write the melody as tones, alone and mixed')
+    sg.add_argument('-o', '--output', default='song.wav')
+    sg.add_argument('--format', choices=('ogg', 'wav', 'flac'))
+    sg.add_argument('-v', '--verbose', action='store_true')
+    sg.set_defaults(func=cmd_sing)
     a = p.parse_args(argv)
     try:
         a.func(a)

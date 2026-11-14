@@ -212,6 +212,26 @@ class Languages(unittest.TestCase):
         self.assertIn('sɨʔte. soɾe', ps)                   # and the 。
 
 
+class Singing(unittest.TestCase):
+    """the singing prototype's notation and syllables (no model)"""
+
+    def test_abc(self):
+        from jivetalker import sing
+        song = sing.parse_abc('L:1/4\nQ:1/4=120\nK:F\nB2 z ^c/ c- c | B\nw: one two_ three\n')
+        self.assertEqual([n.midi for n in song.notes], [70, None, 73, 73, 70])     # Bb (key), ^c holds in the bar
+        self.assertEqual([round(n.length, 3) for n in song.notes], [1.0, 0.5, 0.25, 1.0, 0.5])   # tie: c- c
+        self.assertEqual(song.lyrics, [('one', 0), ('two', 1), None, ('three', 2)])
+        with self.assertRaises(ValueError):
+            sing.parse_abc('K:C\nC D\nw: one two three\n')
+
+    def test_syllables(self):
+        from jivetalker import lang, sing
+        en = lang.get('en')
+        self.assertEqual(sing.split_word('twˈɪŋkᵊl', 2, en), [('twˈ', 'ɪ', 'ŋ'), ('k', 'ᵊ', 'l')])
+        self.assertEqual(sing.split_word('fˈIəɹ', 1, en), [('fˈ', 'I', 'əɹ')])    # one sung syllable
+        self.assertEqual(sing.split_word('ˈɛvəɹiθˌɪŋ', 3, en), [('ˈ', 'ɛ', 'və'), ('ɹ', 'i', ''), ('θˌ', 'ɪ', 'ŋ')])
+
+
 class _no_warnings:
     def __init__(self, test):
         self.test = test
