@@ -33,6 +33,21 @@ VOICED_HZ = 70.0                    # F0 below this = onset/fade-out frames; nev
 # Punctuation, vowels and sonorants (as the phonemizer writes them) come from the language: see lang/.
 
 
+def _quiet_hf_token_nag():
+    """Drop the Hub's "unauthenticated requests ... set a HF_TOKEN" notice (sent by the server as an
+    X-HF-Warning header and logged by huggingface_hub). Users aren't expected to have a token and the engine
+    fetches only the model and a few voices. Every other Hub warning (rate limits, errors) still shows."""
+    import logging
+
+    class _Filter(logging.Filter):
+        def filter(self, record):
+            return 'unauthenticated requests' not in record.getMessage()
+
+    log = logging.getLogger('huggingface_hub.utils._http')
+    if not any(isinstance(f, logging.Filter) and type(f).__name__ == '_Filter' for f in log.filters):
+        log.addFilter(_Filter())
+
+
 @dataclass
 class Rendered:
     audio: np.ndarray
@@ -52,6 +67,7 @@ class Engine:
         import torch
         from kokoro import KModel, KPipeline
         warnings.filterwarnings('ignore', module='torch')
+        _quiet_hf_token_nag()
         self.torch = torch
         model = None
         if model_dir:
