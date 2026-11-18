@@ -76,6 +76,16 @@ class ScriptFormat(unittest.TestCase):
         lines = sorted(n for n, _ in Script.parse(bad).jobs()[1])
         self.assertEqual(len(lines), 3)                   # duplicate ID, unknown speaker, bad direction
 
+    def test_demo_script(self):
+        from jivetalker.toolkit import demo_script
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(demo_script(d))
+            jobs, errors = Script.load(path).jobs()
+            self.assertEqual(errors, [])
+            self.assertGreater(len(jobs), 10)
+            path.write_text('# my edits\n', encoding='utf-8')
+            self.assertEqual(Path(demo_script(d)).read_text(encoding='utf-8'), '# my edits\n')   # copy kept
+
 
 class WordMarks(unittest.TestCase):
     def test_marks_leave_plain_text(self):
@@ -148,6 +158,33 @@ class Editor(unittest.TestCase):
         for bad in (dict(direction='a}b'), dict(text='two\nlines'), dict(flags=['no spaces'])):
             with self.assertRaises(ValueError, msg=bad):
                 rewrite_line(raw, **bad)
+
+    def test_build_a_script_from_scratch(self):
+        from jivetalker.toolkit import Conflict, ScriptDoc, find_scripts, new_script_text
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'scenes' / 'act1.txt'
+            p.parent.mkdir()
+            p.write_bytes(new_script_text('act1', [('Narrator', 'af_heart')]).replace('\n', '\r\n').encode('utf-8'))
+            doc = ScriptDoc(p)
+            m = doc.add_cast({'base': doc.model()['version'], 'name': 'Sam', 'direction': 'pitch -1'}, 'am_michael')
+            m = doc.add_line({'base': m['version'], 'id': 'a.01', 'speaker': 'Sam', 'text': 'Hello [there](+).'})
+            m = doc.add_line({'base': m['version'], 'id': 'a.02', 'speaker': 'Narrator', 'text': 'And so.'})
+            m = doc.add_line({'base': m['version'], 'id': 'a.0', 'speaker': 'Sam', 'text': 'First!', 'after': 5})
+            self.assertEqual(p.read_bytes().decode('utf-8').split('\r\n')[2:], [
+                '@cast Narrator = af_heart', '@cast Sam = am_michael {pitch -1}', '',
+                'a.0  Sam: First!', 'a.01  Sam: Hello [there](+).', 'a.02  Narrator: And so.', ''])
+            self.assertEqual((m['summary']['lines'], m['summary']['errors']), (3, 0))
+            for bad in ({'id': 'a.01', 'speaker': 'Sam', 'text': 'x'},              # the ID is taken
+                        {'id': 'a.9', 'speaker': 'Nobody', 'text': 'x'},
+                        {'id': 'two words', 'speaker': 'Sam', 'text': 'x'}):
+                with self.assertRaises(ValueError, msg=bad):
+                    doc.add_line(dict(bad, base=m['version']))
+            with self.assertRaises(ValueError):
+                doc.add_cast({'base': m['version'], 'name': 'Sam'}, 'af_bella')
+            with self.assertRaises(Conflict):
+                doc.add_line({'base': 'stale', 'id': 'a.9', 'speaker': 'Sam', 'text': 'x'})
+            (Path(d) / 'notes.txt').write_text('no cast here', encoding='utf-8')
+            self.assertEqual(find_scripts(d), ['scenes/act1.txt'])
 
     def test_edits_and_conflicts(self):
         from jivetalker.toolkit import Conflict, ScriptDoc

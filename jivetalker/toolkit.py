@@ -1,6 +1,7 @@
 """The JiveTalker toolkit: one local page with a tab per tool.
 
     jivetalker edit voice_script.txt [--voices-dir voices/] [--out clips/] [--port 8765]
+    jivetalker edit                  (no script: open, create or try the demo one in the page)
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt]
 
 Tabs: **Script** (edit a voice script by hand: word marks, directions, previews, render) and **Voices** (the
@@ -139,6 +140,68 @@ class ScriptDoc:
             if new != text:
                 self._write(new)
         return self.model()
+
+    def _insert(self, q, make):
+        """insert lines made by make(text, script) -> (index into the file's lines, [new lines]) into the
+        version `q['base']` of the file; nothing else in the file changes"""
+        with self.lock:
+            text = self.read()
+            if q.get('base') != version(text):
+                raise Conflict()
+            at, new = make(text, self.script(text))
+            nl = '\r\n' if '\r\n' in text else '\n'
+            lines = text.splitlines(keepends=True)
+            if at > 0 and not lines[at - 1].endswith(('\n', '\r')):
+                lines[at - 1] += nl         # the file's last line had no line break
+            lines[at:at] = [x + nl for x in new]
+            self._write(''.join(lines))
+        return self.model()
+
+    def add_cast(self, q, voice):
+        """{base, name, direction?}: a new @cast line (after the others) for `voice` (as the script writes it)"""
+        name, d = str(q.get('name') or '').strip(), str(q.get('direction') or '').strip()
+        if not name or any(c in name for c in '=|{}:#[]\r\n') or name.startswith(('@', '=')):
+            raise ValueError('a speaker name can\'t be empty or use = | { } : # [ ]')
+        if '{' in d or '}' in d or '\n' in d:
+            raise ValueError('direction: one line, no braces')
+        if d:
+            styles.parse_direction(d)               # ValueError if it doesn't read
+
+        def make(text, sc):
+            if name in sc.aliases:
+                raise ValueError(f'{name} is already in the cast')
+            return _header_end(text.splitlines()), [f'@cast {name} = {voice}' + (f' {{{d}}}' if d else '')]
+        return self._insert(q, make)
+
+    def add_line(self, q):
+        """{base, id, speaker, direction?, text, after?}: a new line after line number `after` (default: at the
+        end), with its ID padded like the line before it"""
+        lid, who = str(q.get('id') or '').strip(), str(q.get('speaker') or '').strip()
+        d, t = str(q.get('direction') or '').strip(), str(q.get('text') or '').strip()
+        if not lid or re.search(r'\s', lid) or lid.startswith(('#', '@', '==')):
+            raise ValueError('an ID is one word, not starting with # @ or ==')
+        if '{' in d or '}' in d or any('\n' in x or '\r' in x for x in (d, t)):
+            raise ValueError('one line only, and no braces in the direction')
+
+        def make(text, sc):
+            if who not in sc.aliases:
+                raise ValueError(f'{who or "the speaker"} is not in the cast: add them first')
+            if any(ln.id == lid for ln in sc.lines):
+                raise ValueError(f'there is already a line {lid}')
+            physical = text.splitlines()
+            after = q.get('after')
+            at = len(physical) if after in (None, '') else int(after)
+            if not 0 <= at <= len(physical):
+                raise Conflict()
+            prev = next((EDIT_RE.match(physical[i]) for i in range(at - 1, -1, -1)
+                         if LINE_RE.match(physical[i].strip()) and not physical[i].lstrip().startswith(('#', '@'))), None)
+            width = len(prev.group(1) + prev.group(2) + prev.group(3)) if prev else 0
+            line = lid.ljust(max(width, len(lid) + 2)) + who + (f' {{{d}}}' if d else '') + f': {t}'
+            m = LINE_RE.match(line)
+            if not m or m.group(1) != lid or m.group(3).strip() != who:
+                raise ValueError('that line would not read back (a ":" or "{" in the speaker?)')
+            return at, [line]
+        return self._insert(q, make)
 
     # ------------------------------------------------------------------ the page's view of the script
     def model(self):
@@ -284,6 +347,68 @@ class ScriptDoc:
         return out
 
 
+HEADER_WORDS = ('@voices', '@cast', '@defaults', '@pronounce')
+DEMO = Path(__file__).with_name('demo') / 'voice_script.txt'
+DEMO_DIR = 'jivetalker_demo'
+SKIP_DIRS = {'node_modules', 'site-packages', '__pycache__', 'venv', 'env'}
+
+
+def _header_end(physical):
+    """where a new @cast line goes: after the last @cast line, else after the header (the comments and
+    @ lines at the top of the file), as a 0-based index into the file's lines"""
+    casts = [i for i, x in enumerate(physical) if x.strip().startswith('@cast')]
+    if casts:
+        return casts[-1] + 1
+    end = 0
+    for i, x in enumerate(physical):
+        st = x.strip()
+        if st and not st.startswith('#') and not st.startswith(HEADER_WORDS):
+            break
+        if st:
+            end = i + 1
+    return end
+
+
+def new_script_text(name, cast):
+    """a new, empty script: a comment and the @cast lines [(name, voice as written)]"""
+    out = [f'# Voice script: {name}. The format: VOICE_SCRIPT.md', '']
+    out += [f'@cast {n} = {v}' for n, v in cast]
+    return '\n'.join(out) + '\n\n'
+
+
+def demo_script(where=None):
+    """the user's own copy of the demo script (made on first use, in jivetalker_demo/ under `where` or the
+    current folder); an existing copy is kept, edits and all"""
+    dst = Path(where or '.') / DEMO_DIR / DEMO.name
+    if not dst.is_file():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(DEMO.read_bytes())
+        print(f'jivetalker: copied the demo script to {dst}', flush=True)
+    return dst
+
+
+def find_scripts(home, depth=2, limit=40):
+    """voice scripts (.txt files with a @cast line) in `home` and the folders below it"""
+    home, out = Path(home), []
+    for root, dirs, files in os.walk(home):
+        rel = Path(root).relative_to(home)
+        dirs[:] = sorted(d for d in dirs if not d.startswith('.') and d not in SKIP_DIRS
+                         and len(rel.parts) < depth)
+        for f in sorted(files):
+            if not f.endswith('.txt'):
+                continue
+            try:
+                with open(Path(root) / f, encoding='utf-8', errors='replace') as fh:
+                    head = fh.read(8192)
+            except OSError:
+                continue
+            if re.search(r'^\s*@cast\s', head, re.M):
+                out.append((rel / f).as_posix())
+                if len(out) >= limit:
+                    return out
+    return out
+
+
 class LockedEngine:
     """an Engine whose render() takes the shared lock, so a long render and previews can take turns"""
 
@@ -307,10 +432,15 @@ class Stopped(KeyboardInterrupt):
 
 
 class Toolkit:
-    def __init__(self, mixer, doc=None, start='script'):
+    def __init__(self, mixer, doc=None, start='script', home=None, fmt='ogg', save_fixed=False):
+        """home: the folder new and opened scripts' paths are relative to; save_fixed: the mixer's save folder
+        was chosen on the command line (else it follows the open script's @voices folder)"""
         self.mixer = mixer
         self.doc = doc
-        self.start = start if doc else 'voices'
+        self.start = start
+        self.home = Path(home or '.').resolve()
+        self.fmt = doc.fmt if doc else fmt
+        self.save_fixed = save_fixed
         self.eng = mixer.eng
         self.lock = mixer.lock
         self.words_cache = {}
@@ -319,12 +449,88 @@ class Toolkit:
 
     def info(self, _):
         return {'start': self.start, 'script': self.doc.path.name if self.doc else None,
-                'folder': self.doc.path.parent.name if self.doc else None}
+                'folder': self.doc.path.parent.name if self.doc else None,
+                'home': str(self.home), 'scripts': find_scripts(self.home),
+                'demo': (Path(DEMO_DIR) / DEMO.name).as_posix(),
+                'demo_exists': (self.home / DEMO_DIR / DEMO.name).is_file()}
 
     def need_doc(self):
         if not self.doc:
-            raise ValueError('no script open (start with: jivetalker edit voice_script.txt)')
+            raise ValueError('no script open: open or create one in the Script tab')
         return self.doc
+
+    # ------------------------------------------------------------------ opening and creating scripts
+    def _path(self, q):
+        p = str(q.get('path') or '').strip().strip('"')
+        if not p:
+            raise ValueError('give a file name')
+        p = Path(p).expanduser()
+        return (p if p.is_absolute() else self.home / p).resolve()
+
+    def _switch(self, path):
+        if self.job['running']:
+            raise ValueError('a render is running: stop it or let it finish first')
+        doc = ScriptDoc(path, None, None, self.fmt, self.mixer.source_for)
+        own = doc.script().voices_dir()
+        if own.is_dir():
+            self.mixer.lab.add_dir(own)
+        self.mixer.script, self.mixer.script_voices = str(doc.path), str(own)
+        if not self.save_fixed:
+            self.mixer.save_dir = own
+        self.doc = doc
+        self.job = {'running': False, 'log': [], 'done': 0, 'total': 0}
+        print(f'jivetalker: editing {doc.path}', flush=True)
+        return self.info(None)
+
+    def open_script(self, q):
+        """{path}: edit another script (a path relative to the home folder, or absolute)"""
+        p = self._path(q)
+        if not p.is_file():
+            raise ValueError(f'no such file: {p}')
+        return self._switch(p)
+
+    def open_demo(self, _):
+        return self._switch(demo_script(self.home))
+
+    def voice_ref(self, source, folder):
+        """how a script in `folder` names the mixer voice `source`: a stock name, or a path to the .pt"""
+        if source in self.mixer.lab.stock:
+            return source
+        if source not in self.mixer.lab.user:
+            raise ValueError(f'unknown voice {source}')
+        p = Path(self.mixer.lab.user[source])
+        try:
+            rel = Path(os.path.relpath(p, folder))
+        except ValueError:                  # another drive (Windows)
+            return str(p)
+        return rel.with_suffix('').as_posix() if rel.parent == Path('.') else rel.as_posix()
+
+    def new_script(self, q):
+        """{path, cast: [{name, voice}]}: create a script and edit it"""
+        p = self._path(q)
+        if not p.suffix:
+            p = p.with_suffix('.txt')
+        if p.exists():
+            raise ValueError(f'{p.name} already exists in {p.parent}: open it, or pick another name')
+        cast, names = [], set()
+        for c in q.get('cast') or []:
+            name = str(c.get('name') or '').strip()
+            if not name:
+                continue
+            if any(ch in name for ch in '=|{}:#[]') or name.startswith('@'):
+                raise ValueError(f'{name}: a speaker name can\'t use = | {{ }} : # [ ]')
+            if name in names:
+                raise ValueError(f'{name} is in the cast twice')
+            names.add(name)
+            cast.append((name, self.voice_ref(str(c.get('voice') or ''), p.parent)))
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, 'x', encoding='utf-8', newline='') as f:
+            f.write(new_script_text(p.stem, cast))
+        return self._switch(p)
+
+    def add_cast(self, q):
+        doc = self.need_doc()
+        return doc.add_cast(q, self.voice_ref(str(q.get('voice') or ''), doc.path.parent))
 
     def _job(self, line_id):
         jobs, errors = self.need_doc().script().jobs(self.doc.voices_override)
@@ -422,7 +628,10 @@ def serve(toolkit, port=8765, open_browser=True):
             '/api/variants': mx.variants, '/api/save': mx.save,
             '/api/script/edit': lambda q: doc().edit(q), '/api/script/text': lambda q: doc().save_text(q),
             '/api/script/preview': toolkit.preview, '/api/script/words': toolkit.words,
-            '/api/script/render': toolkit.render_start, '/api/script/render/stop': toolkit.render_stop}
+            '/api/script/render': toolkit.render_start, '/api/script/render/stop': toolkit.render_stop,
+            '/api/script/open': toolkit.open_script, '/api/script/demo': toolkit.open_demo,
+            '/api/script/new': toolkit.new_script, '/api/script/cast': toolkit.add_cast,
+            '/api/script/line': lambda q: doc().add_line(q)}
     get = {'/api/info': mx.info, '/api/toolkit': toolkit.info,
            '/api/script': lambda q: doc().model(),
            '/api/script/version': lambda q: {'version': version(doc().read())},

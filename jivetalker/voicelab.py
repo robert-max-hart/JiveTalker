@@ -86,12 +86,19 @@ class Lab:
         self.torch = engine.torch
         self.user = {}                              # display name -> path
         for d in voice_dirs:
-            for p in sorted(Path(d).expanduser().glob('*.pt')):
-                name = p.stem if p.stem not in self.user else f'{Path(d).name}/{p.stem}'
-                self.user[name] = str(p.resolve())
+            self.add_dir(d)
         self.stock = list(AXIS_BASIS)
         self._axes = None
         self._mean = {}
+
+    def add_dir(self, d):
+        """make the .pt voices in folder `d` available (a folder already added adds nothing new)"""
+        have = set(self.user.values())
+        for p in sorted(Path(d).expanduser().glob('*.pt')):
+            if str(p.resolve()) in have:
+                continue
+            name = p.stem if p.stem not in self.user else f'{Path(d).name}/{p.stem}'
+            self.user[name] = str(p.resolve())
 
     # ------------------------------------------------------------------ packs
     def pack(self, source, base=None):

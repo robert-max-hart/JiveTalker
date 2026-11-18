@@ -1,0 +1,47 @@
+# JiveTalker demo voice script. This is your own copy: edit it, preview lines, render them.
+# It uses Kokoro's stock voices, so it needs no .pt files. Make your own voices in the Voices tab,
+# save them into a folder, point "@voices" at it and "@cast" a speaker to them by name.
+# The full format: VOICE_SCRIPT.md.
+
+@cast Narrator = bf_emma {soft}
+@cast Ava = af_heart | ???
+@cast Ava (thought) = af_heart {internal, volume -2}
+@cast Sam = am_michael {pitch -0.5}
+@defaults speed 0.95, human 1.0
+@pronounce Quillon = /kwˈɪljən/
+
+== 1. Styles and effects ==
+
+demo.01  Narrator: The lighthouse at Quillon had been dark for [twenty](+) years.
+demo.02  Ava: Hello? Is anyone up there?
+demo.03  Sam {shout}: Up [here](++)! Mind the stairs!
+demo.04  Ava (thought): He sounds friendly enough. I think.
+demo.05  Sam {whisper}: Don't wake the keeper's cat.
+demo.06  Ava {muffled, volume -6}: Sam? I can't see a thing behind this door.
+
+== 2. Word marks ==
+
+# stress, de-stress, drawn out, shortened
+demo.07  Ava: I [never](+) said it was [your](-) fault. I said it was [somebody's](++).
+demo.08  Sam: It's a [long](~~) way down, so take it [slowly](~).
+# pitch: a shift, then a shape across two words
+demo.09  Sam: Really? [Really](^2>-1)? You came [all the way](^0>3>0) up here for that?
+# pauses after a word, and a silent word
+demo.10  Ava: Well, [um](=)... the [light](|||) is still working.
+# say different words than the text shows
+demo.11  Narrator: She checked her watch: [9:40](=twenty to ten), [approx.](=approximately) on time.
+
+== 3. Settings and takes ==
+
+demo.12  Sam {speed 0.8, range 0.4}: Nobody... has come up here... in a very long time.
+demo.13  Sam {speed 0.8, range 0.4, take 2}: Nobody... has come up here... in a very long time.
+demo.14  ??? {pitch -2, pause 2}: Who goes there, at this hour?
+
+== 4. Ramps ==
+
+# a setting that changes gradually across the lines of one speaker
+@ramp volume 0 -> -12
+demo.15  Narrator: The beam swept out over the water once,
+demo.16  Narrator: and again,
+demo.17  Narrator: and again, fainter each time, until the night took it.
+@end

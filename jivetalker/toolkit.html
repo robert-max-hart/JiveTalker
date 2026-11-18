@@ -76,15 +76,14 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .seg button .c { font: 600 12.5px var(--mono) }
 .seg button .s { font-size: 10px; opacity: .75 }
 .work { display: grid; grid-template-columns: 250px minmax(0, 1fr) 370px; gap: 16px; padding: 14px 16px 40px; align-items: start }
-.work.collapsed { grid-template-columns: 250px minmax(0, 1fr) 52px }
 .side, .insp { position: sticky; top: 64px; max-height: calc(100vh - 76px); overflow: auto; display: flex; flex-direction: column; gap: 12px; min-width: 0 }
 @media (max-width: 1180px) {
-  .work { grid-template-columns: minmax(0, 1fr) 340px } .work.collapsed { grid-template-columns: minmax(0, 1fr) 52px }
+  .work { grid-template-columns: minmax(0, 1fr) 340px }
   .side { grid-column: 1 / -1; order: 3; position: static; max-height: none }
 }
 @media (max-width: 800px) {
-  .work, .work.collapsed { grid-template-columns: minmax(0, 1fr) }
-  .insp { position: static; max-height: none } .rail { flex-direction: row !important; width: auto !important }
+  .work { grid-template-columns: minmax(0, 1fr) }
+  .insp { position: static; max-height: none }
 }
 .box { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px }
 .castrow { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center }
@@ -128,11 +127,11 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .misc { margin: 2px 14px; padding: 2px 12px; font: 12px var(--mono); color: var(--muted) }
 
 /* inspector */
-.rail { width: 52px; padding: 8px 0; display: flex; flex-direction: column; align-items: center; gap: 12px }
-.rail .vt { writing-mode: vertical-rl; border: 0; background: transparent; min-height: 0; padding: 6px; font-size: 12.5px; font-weight: 600 }
-.ihead { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; min-height: 0; text-align: left }
-.ihead svg { transition: transform .15s }
-.ihead[aria-expanded=false] svg { transform: rotate(-90deg) }
+.itabs { display: flex; border-bottom: 1px solid var(--line) }
+.itabs button { flex: 1 1 0; border: 0; border-radius: 0; background: transparent; min-height: 46px; padding: 6px 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; color: var(--muted); min-width: 0 }
+.itabs button[aria-selected=true] { color: var(--fg); box-shadow: inset 0 -3px 0 var(--accent) }
+.itabs button b { font-size: 13px }
+.itabs button small { font: 11px var(--mono); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .code { font: 13.5px var(--mono); padding: 7px 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; white-space: pre }
 .code .w { color: var(--accent-ink); font-weight: 600 } .code .m { color: var(--warn) }
 .field { display: flex; flex-direction: column; gap: 5px }
@@ -180,6 +179,23 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; max-width: min(640px, calc(100vw - 32px)); z-index: 20; box-shadow: 0 6px 20px rgba(0,0,0,.2) }
 .toast.err { background: var(--warn); color: #fff }
 .empty { padding: 40px; text-align: center; color: var(--muted) }
+
+/* start screen (no script open) and the add forms */
+.start { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px }
+.start h2 { margin: 0 0 4px; font-size: 20px }
+.startgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 18px; align-items: start }
+.start .box h3 { margin: 0; font-size: 15px }
+.field { display: flex; flex-direction: column; gap: 4px }
+.field input, .field select { width: 100% }
+.castedit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; align-items: center }
+.filelist { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto }
+.filelist button { text-align: left; border: 0; background: transparent; min-height: 0; padding: 4px 6px; border-radius: 5px; font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.filelist button:hover { background: var(--accent-soft) }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap }
+.row > input { flex: 1 1 160px }
+.err { color: var(--warn); font-size: 12.5px }
+.compose { margin-top: 12px; padding: 12px 14px; display: grid; grid-template-columns: 120px 160px minmax(0, 1fr) auto; gap: 8px; align-items: end }
+@media (max-width: 800px) { .compose { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) } .compose .wide { grid-column: 1 / -1 } }
 </style>
 </head>
 <body>
@@ -202,6 +218,7 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 <main id="view-script">
   <div class="subbar">
     <span class="mono" style="font-weight:600" id="fileName"></span>
+    <button class="small" id="scriptsBtn" title="Create another script, or open one">New or open…</button>
     <div class="seg" role="group" aria-label="View">
       <button id="vVisual" class="on" style="min-width:76px">Visual</button>
       <button id="vSource" style="min-width:76px">Source</button>
@@ -216,6 +233,12 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
     <aside class="side" id="side"></aside>
     <section style="min-width:0">
       <div class="card lines" id="lines"></div>
+      <form class="card compose" id="compose" autocomplete="off">
+        <label class="field"><span class="lab">ID</span><input type="text" id="cId" class="mono" spellcheck="false"></label>
+        <label class="field"><span class="lab">Speaker</span><select id="cSpk"></select></label>
+        <label class="field wide"><span class="lab">New line</span><input type="text" id="cText" placeholder="What they say (click words to mark them)"></label>
+        <button class="primary" id="cAdd" type="submit">Add line</button>
+      </form>
       <div class="card srcwrap" id="source" hidden>
         <div class="srcbar">
           <span class="hint" id="srcState">Saved</span>
@@ -232,6 +255,37 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
       </div>
     </section>
     <aside class="insp" id="insp"></aside>
+  </div>
+</main>
+
+<main id="view-start" hidden>
+  <div class="start">
+    <div class="row"><h2 id="startTitle">Start a voice script</h2><div class="grow"></div><button class="small" id="startBack" hidden></button></div>
+    <div class="hint">Scripts are plain text files; new ones go in <span class="mono" id="homeDir"></span> unless you give a full path.</div>
+    <div class="startgrid">
+      <form class="card box" id="newForm" autocomplete="off">
+        <h3>New script</h3>
+        <label class="field"><span class="lab">File name</span><input type="text" id="newPath" class="mono" value="voice_script.txt" spellcheck="false"></label>
+        <div class="field"><span class="lab">Cast</span><div id="newCast" class="field"></div>
+          <button class="small" type="button" id="newCastAdd" style="align-self:flex-start">Add a speaker</button>
+          <span class="hint">Pick a stock voice now; make your own in the Voices tab later and recast.</span></div>
+        <div class="err" id="newErr"></div>
+        <button class="primary" type="submit" style="align-self:flex-start">Create</button>
+      </form>
+      <form class="card box" id="openForm" autocomplete="off">
+        <h3>Open a script</h3>
+        <div class="filelist" id="openList"></div>
+        <label class="field"><span class="lab">Or a path</span>
+          <div class="row"><input type="text" id="openPath" class="mono" placeholder="scripts/chapter1.txt" spellcheck="false"><button type="submit">Open</button></div></label>
+        <div class="err" id="openErr"></div>
+      </form>
+      <section class="card box">
+        <h3>Try the demo</h3>
+        <div class="hint">A short scene that shows the styles, word marks, takes and ramps with Kokoro's stock voices. You get your own copy, in <span class="mono" id="demoPath"></span>, to edit and render.</div>
+        <div class="err" id="demoErr"></div>
+        <button id="demoBtn" style="align-self:flex-start">Open the demo</button>
+      </section>
+    </div>
   </div>
 </main>
 
@@ -271,9 +325,7 @@ let BYID = {};          // id -> line item
 let SPK = {};           // cast name -> colour index
 let sel = null;         // {id, a, b}: the selected line and word range (token indices; a = null: no word)
 let view = store.get('view', 'visual');
-let panelOpen = store.get('panelOpen', true);
-let wordOpen = store.get('wordOpen', true);
-let lineOpen = store.get('lineOpen', true);
+let inspTab = 'line';    // the inspector's tab: 'line' or 'word'
 let moreSettings = store.get('moreSettings', false);
 const undoStack = [], redoStack = [];
 const unknown = {};     // id -> {text, words}
@@ -384,11 +436,12 @@ function dirSet(d, name, value) {
 // ================================================================== tabs and the mixer
 const frame = $('#mixerFrame');
 let mixerReady = false; const mixerQueue = [];
+let startOpen = false;     // the start screen is showing in the Script tab
 function showTab(t) {
-  if (t === 'script' && !INFO?.script) t = 'voices';
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === t));
-  $('#view-script').hidden = t !== 'script'; $('#view-voices').hidden = t !== 'voices';
-  $('#scriptActions').style.visibility = t === 'script' && INFO?.script ? 'visible' : 'hidden';
+  const start = t === 'script' && (startOpen || !INFO?.script);
+  $('#view-script').hidden = t !== 'script' || start; $('#view-start').hidden = !start; $('#view-voices').hidden = t !== 'voices';
+  $('#scriptActions').style.visibility = t === 'script' && INFO?.script && !startOpen ? 'visible' : 'hidden';
   if (t === 'voices' && !frame.src) frame.src = '/mixer?embed=1';
   if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
 }
@@ -425,7 +478,7 @@ function setModel(m) {
   renderAll();
   checkWords();
 }
-function renderAll() { renderBar(); renderSide(); renderLines(); renderInsp(); }
+function renderAll() { renderBar(); renderSide(); renderLines(); renderInsp(); renderCompose(); }
 
 // external changes: poll the file's version
 setInterval(async () => {
@@ -531,7 +584,12 @@ function renderSide() {
   const probs = problems();
   $('#side').innerHTML = `
     <section class="card box"><h3 class="lab" style="margin:0">Cast</h3>${cast || '<div class="hint">No @cast lines yet.</div>'}
-      ${M.defaults ? `<div class="mono hint" style="font-size:11.5px">@defaults ${esc(M.defaults)}</div>` : ''}</section>
+      ${M.defaults ? `<div class="mono hint" style="font-size:11.5px">@defaults ${esc(M.defaults)}</div>` : ''}
+      ${castForm ? `<form class="field" id="castForm" autocomplete="off">
+        <input type="text" id="castName" placeholder="Name" value="${esc(castForm.name)}">
+        <select id="castVoice">${voiceOptions(castForm.voice)}</select>
+        <div class="row"><button class="small primary" type="submit">Add</button><button class="small" type="button" id="castCancel">Cancel</button></div>
+      </form>` : '<button class="small" id="castAdd" style="align-self:flex-start">Add a speaker</button>'}</section>
     ${outline.length ? `<section class="card box"><h3 class="lab" style="margin:0">Outline</h3><div>${outline.join('')}</div></section>` : ''}
     <section class="card box" id="problems"><h3 class="lab" style="margin:0">Check</h3>
       ${probs.length ? probs.map(p => `<button class="prob ${p.kind}" data-goto="${esc(p.id ?? '')}" data-lineno="${p.lineno ?? ''}" data-word="${esc(p.word ?? '')}">
@@ -540,6 +598,60 @@ function renderSide() {
       <div class="hint" style="font-size:11.5px">${M.summary.lines} lines · ${M.summary.cached} clips up to date${M.summary.reuse ? ` · ${M.summary.reuse} to rename` : ''} · clips in <span class="mono" title="${esc(M.out)}">${esc(M.out_rel)}</span></div>
     </section>`;
 }
+let castForm = null;      // the open add-a-speaker form: {name, voice}
+$('#side').addEventListener('input', e => { if (castForm && e.target.id === 'castName') castForm.name = e.target.value; if (castForm && e.target.id === 'castVoice') castForm.voice = e.target.value; });
+$('#side').addEventListener('submit', e => {
+  e.preventDefault(); if (e.target.id !== 'castForm') return;
+  const q = {name: castForm.name.trim(), voice: castForm.voice};
+  if (!q.name) return $('#castName').focus();
+  insertEdit('/api/script/cast', q, () => { castForm = null; renderSide(); toast(`Added ${q.name} to the cast`); if (!$('#cText').value) $('#cSpk').value = q.name; });
+});
+function insertEdit(path, q, after) {
+  return enqueue(async () => {
+    const before = M.text;
+    const res = await api(path, Object.assign({base: M.version}, q));
+    undoStack.push(before); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0;
+    setModel(res); if (after) after();
+  });
+}
+
+// the voices a speaker can be cast to: the mixer's stock and saved ones
+let SOURCES = {stock: [], user: {}};
+function voiceOptions(cur) {
+  const user = Object.keys(SOURCES.user);
+  return (user.length ? `<optgroup label="Your voices">${user.map(n => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>` : '')
+    + `<optgroup label="Kokoro stock">${SOURCES.stock.map(n => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>`;
+}
+
+// ================================================================== adding lines
+let idTouched = false;
+function nextId() {
+  const ids = new Set(LINES.map(l => l.id)), last = LINES.length ? LINES[LINES.length - 1].id : null;
+  const m = last && last.match(/^(.*?)(\d+)$/);
+  const pre = m ? m[1] : last ? last + '.' : 'line.', w = m ? m[2].length : 2;
+  let n = m ? +m[2] : 0, id;
+  do { n++; id = pre + String(n).padStart(w, '0'); } while (ids.has(id));
+  return id;
+}
+function renderCompose() {
+  const spk = $('#cSpk'), cur = spk.value || (LINES.length ? LINES[LINES.length - 1].who : '');
+  spk.innerHTML = M.cast.map(c => `<option ${c.name === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const none = !M.cast.length;
+  for (const el of ['#cId', '#cSpk', '#cText', '#cAdd']) $(el).disabled = none;
+  $('#cText').placeholder = none ? 'Add a speaker first (Cast, on the left).' : 'What they say (click words to mark them)';
+  if (!idTouched) $('#cId').value = nextId();
+}
+$('#cId').addEventListener('input', () => { idTouched = true; });
+$('#compose').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = {id: $('#cId').value.trim(), speaker: $('#cSpk').value, text: $('#cText').value.trim()};
+  if (!q.text) return $('#cText').focus();
+  insertEdit('/api/script/line', q, () => {
+    $('#cText').value = ''; idTouched = false; renderCompose(); $('#cText').focus();
+    if (BYID[q.id]) { sel = {id: q.id, a: null, b: null}; renderLines(); renderInsp(); const el = document.querySelector(`.line[data-id="${CSS.escape(q.id)}"]`); if (el) el.scrollIntoView({block: 'nearest'}); }
+  });
+});
+
 function problems() {
   const out = [];
   for (const p of M.problems) out.push({kind: 'e', where: p.lineno ? 'line ' + p.lineno : 'header', msg: p.msg, lineno: p.lineno});
@@ -552,6 +664,8 @@ function problems() {
   return out;
 }
 $('#side').addEventListener('click', e => {
+  if (e.target.closest('#castAdd')) { castForm = {name: '', voice: 'af_heart'}; renderSide(); $('#castName').focus(); return; }
+  if (e.target.closest('#castCancel')) { castForm = null; renderSide(); return; }
   const v = e.target.closest('[data-voices]');
   if (v) { const c = M.cast.find(c => c.name === v.dataset.voices); const l = sel && BYID[sel.id]; return openVoices(c.source, l && l.who === c.name ? l : null); }
   const j = e.target.closest('[data-jump]');
@@ -583,7 +697,7 @@ function renderLines() {
     else if (it.kind === 'directive') out.push(`<div class="misc">${esc(it.text)}</div>`);
     else out.push(lineHTML(it));
   }
-  $('#lines').innerHTML = out.join('') || '<div class="empty">No lines yet. Add some in Source.</div>';
+  $('#lines').innerHTML = out.join('') || '<div class="empty">No lines yet: write the first one below.</div>';
 }
 function lineHTML(l) {
   const isSel = sel && sel.id === l.id;
@@ -649,13 +763,12 @@ $('#lines').addEventListener('click', e => {
 });
 function select(id, a, b) {
   sel = {id, a, b};
-  if (a !== null && !wordOpen) { wordOpen = true; store.set('wordOpen', true); }
+  inspTab = a !== null ? 'word' : 'line';
   renderLines(); renderInsp();
   { const el = document.querySelector(`.line[data-id="${CSS.escape(id)}"]`); if (el) el.scrollIntoView({block: 'nearest'}); }
 }
 
 // ================================================================== inspector
-const chev = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4 L6 8 L10 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const PITCH = [['', 'None'], ['1.5', 'Up'], ['-2', 'Down'], ['0>3', 'Rise'], ['2>-1', 'Fall'], ['0>3>0', 'Arc'], ['0>-2>0', 'Dip']];
 const STRESS_HINT = {'-3': 'Strongest de-stress: shorter still. Past this Kokoro starts swallowing sounds.', '-2': 'Stronger de-stress.',
   '-1': 'De-stress: lower, quieter and a little shorter.', '0': 'No stress.', '1': 'Stress: a pitch lift that eases down across the word, a little louder and longer.',
@@ -665,33 +778,25 @@ const SHORTEN_SUB = ['', '≤0.15 s', '≤0.10 s', '≤0.07 s'];
 let curve = null;       // the pitch points while dragging
 
 function renderInsp() {
-  const work = $('#work'), insp = $('#insp');
-  work.classList.toggle('collapsed', !panelOpen);
-  const l = sel && BYID[sel.id];
-  if (!panelOpen) {
-    const w = l && sel.a !== null ? plainOf(tokenize(l.text).slice(sel.a, sel.b + 1).map(t => t.word || t.text).join(' ')) : '';
-    insp.innerHTML = `<div class="card rail">
-      <button class="small" data-act="panel" aria-label="Expand the inspector" title="Expand" style="width:34px;height:34px;padding:0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 2 L4 7 L9 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      ${w ? `<button class="vt" data-act="openword" style="color:var(--accent-ink)">Word · ${esc(w)}</button>` : ''}
-      ${l ? `<button class="vt" data-act="openline" style="color:var(--muted)">Line · ${esc(l.id)}</button>` : ''}</div>`;
-    return;
-  }
-  insp.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span class="lab">Inspector</span><div class="grow"></div>
-      <button class="small" data-act="panel" aria-label="Collapse the inspector" title="Collapse" style="width:30px;height:30px;padding:0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 2 L10 7 L5 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-    <section class="card box" style="gap:12px">${l ? wordHTML(l) : '<div class="hint">Pick a line.</div>'}</section>
-    ${l ? `<section class="card box" style="gap:12px">${lineInspHTML(l)}</section>` : ''}`;
+  const insp = $('#insp'), l = sel && BYID[sel.id];
+  if (!l) { insp.innerHTML = '<section class="card box"><span class="lab">Inspector</span><div class="hint">Pick a line.</div></section>'; return; }
+  const w = sel.a !== null ? plainOf(tokenize(l.text).slice(sel.a, sel.b + 1).map(t => t.word || t.text).join(' ')) : '';
+  const tab = (id, label, sub) => `<button role="tab" id="itab-${id}" data-itab="${id}" aria-selected="${inspTab === id}" aria-controls="ipanel">
+      <b>${label}</b><small>${esc(sub)}</small></button>`;
+  insp.innerHTML = `<section class="card">
+    <div class="itabs" role="tablist" aria-label="Inspector">${tab('line', 'Line', l.id)}${tab('word', 'Word', w || 'none picked')}</div>
+    <div class="box" id="ipanel" role="tabpanel" aria-labelledby="itab-${inspTab}" style="gap:12px">${inspTab === 'word' ? wordHTML(l) : lineInspHTML(l)}</div></section>`;
   bindCurve();
 }
 
 function wordHTML(l) {
-  if (sel.a === null) return `<h3 class="lab" style="margin:0">Word</h3><div class="hint">Click a word to stress it, draw it out, shape its pitch or add a pause. Shift-click another word to mark several at once.</div>`;
+  if (sel.a === null) return `<div class="hint">Click a word to stress it, draw it out, shape its pitch or add a pause. Shift-click another word to mark several at once.</div>`;
   const toks = tokenize(l.text), spec = currentSpec(toks, sel.a, sel.b), o = parseSpec(spec);
   const words = plainOf(l.text.slice(toks[sel.a].cs, toks[sel.b].ce));
   const head = `<div style="display:flex;align-items:center;gap:8px">
-      <button class="ihead" data-act="word" aria-expanded="${wordOpen}">${chev}<span class="lab">Word</span><span style="font-size:19px;font-weight:700">${esc(words)}</span></button>
+      <span style="font-size:19px;font-weight:700">${esc(words)}</span>
       <div class="grow"></div><button class="small" data-act="clear" ${spec ? '' : 'disabled'}>Clear</button></div>
     <div class="code"><span class="w">[${esc(words)}]</span><span class="m">${spec ? '(' + esc(spec) + ')' : ''}</span></div>`;
-  if (!wordOpen) return head;
   const sv = Math.max(-3, Math.min(3, o.stress));
   const stressBtns = [-3, -2, -1, 0, 1, 2, 3].map(v => {
     const lab = v === 3 && o.stress > 3 ? '+'.repeat(o.stress) : v > 0 ? '+'.repeat(v) : v < 0 ? '-'.repeat(-v) : '·';
@@ -798,8 +903,7 @@ function resample(p, k) {
 }
 
 function lineInspHTML(l) {
-  const head = `<button class="ihead" data-act="line" aria-expanded="${lineOpen}" style="flex-wrap:wrap">${chev}<span class="lab">Line</span><span class="mono" style="font-weight:600">${esc(l.id)}</span><span style="font-weight:600;color:var(--s${SPK[l.who] ?? 4})">${esc(l.speaker)}</span></button>`;
-  if (!lineOpen) return head;
+  const head = `<div class="row"><span class="mono" style="font-weight:600">${esc(l.id)}</span><span style="font-weight:600;color:var(--s${SPK[l.who] ?? 4})">${esc(l.speaker)}</span></div>`;
   if (!l.settings) return head + `<div class="err">${l.errors.map(esc).join('<br>')}</div><div class="hint">Fix the line in Source (or its direction below).</div>
     <label class="field"><span class="lab">Direction</span><input type="text" class="mono" data-input="direction" value="${esc(l.direction)}"></label>`;
   const srcTag = s => `<span class="src ${s === 'line' ? 's-line' : s.includes('cast') ? 's-cast' : s.includes('ramp') ? 's-ramp' : ''}">${esc(s)}</span>`;
@@ -843,11 +947,7 @@ insp.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   const l = sel && BYID[sel.id];
   const act = b.dataset.act;
-  if (act === 'panel') { panelOpen = !panelOpen; store.set('panelOpen', panelOpen); return renderInsp(); }
-  if (act === 'openword') { panelOpen = wordOpen = true; store.set('panelOpen', true); store.set('wordOpen', true); return renderInsp(); }
-  if (act === 'openline') { panelOpen = lineOpen = true; store.set('panelOpen', true); store.set('lineOpen', true); return renderInsp(); }
-  if (act === 'word') { wordOpen = !wordOpen; store.set('wordOpen', wordOpen); return renderInsp(); }
-  if (act === 'line') { lineOpen = !lineOpen; store.set('lineOpen', lineOpen); return renderInsp(); }
+  if (b.dataset.itab) { inspTab = b.dataset.itab; return renderInsp(); }
   if (act === 'more') { moreSettings = !moreSettings; store.set('moreSettings', moreSettings); return renderInsp(); }
   if (!l) return;
   if (act === 'clear') return editMark(() => parseSpec(''));
@@ -1070,7 +1170,7 @@ async function setView(v) {
   if (view === 'source' && srcDirty && !(await saveSource())) return;
   view = v; store.set('view', v);
   $('#vVisual').classList.toggle('on', v === 'visual'); $('#vSource').classList.toggle('on', v === 'source');
-  $('#lines').hidden = v !== 'visual'; $('#source').hidden = v !== 'source';
+  $('#lines').hidden = v !== 'visual'; $('#compose').hidden = v !== 'visual'; $('#source').hidden = v !== 'source';
   if (v === 'source') { setSource(M.text); const l = sel && BYID[sel.id]; if (l) gotoSourceLine(l.lineno); }
   else renderLines();
 }
@@ -1117,15 +1217,52 @@ document.addEventListener('keydown', e => {
   if (keys[k]) { e.preventDefault(); keys[k](); }
 });
 
+// ================================================================== start screen: new, open, demo
+function castRow(name, voice) {
+  const d = document.createElement('div'); d.className = 'castedit';
+  d.innerHTML = `<input type="text" placeholder="Speaker name" value="${esc(name)}" aria-label="Speaker name"><select aria-label="Voice">${voiceOptions(voice)}</select><button class="small plain" type="button" title="Remove" aria-label="Remove">✕</button>`;
+  d.querySelector('button').onclick = () => d.remove();
+  $('#newCast').append(d);
+}
+$('#newCastAdd').onclick = () => { castRow('', 'am_michael'); $('#newCast').lastElementChild.querySelector('input').focus(); };
+async function openWith(path, body, errEl) {
+  $(errEl).textContent = '';
+  if (M && view === 'source' && srcDirty && !(await saveSource())) return;
+  try { await api(path, body); location.hash = 'script'; location.reload(); }
+  catch (e) { $(errEl).textContent = e.message; }
+}
+$('#newForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const cast = [...$('#newCast').children].map(r => ({name: r.querySelector('input').value.trim(), voice: r.querySelector('select').value})).filter(c => c.name);
+  openWith('/api/script/new', {path: $('#newPath').value, cast}, '#newErr');
+});
+$('#openForm').addEventListener('submit', e => { e.preventDefault(); if ($('#openPath').value.trim()) openWith('/api/script/open', {path: $('#openPath').value}, '#openErr'); });
+$('#openList').addEventListener('click', e => { const b = e.target.closest('[data-path]'); if (b) openWith('/api/script/open', {path: b.dataset.path}, '#openErr'); });
+$('#demoBtn').onclick = () => openWith('/api/script/demo', {}, '#demoErr');
+function showStart(on) {
+  startOpen = on; showTab('script');
+  if (on) $('#newPath').focus();
+}
+$('#scriptsBtn').onclick = () => showStart(true);
+$('#startBack').onclick = () => showStart(false);
+function setupStart() {
+  $('#homeDir').textContent = INFO.home; $('#demoPath').textContent = INFO.demo;
+  $('#demoBtn').textContent = INFO.demo_exists ? 'Open your demo copy' : 'Open the demo';
+  const mine = INFO.scripts.filter(p => p !== INFO.demo || INFO.demo_exists);
+  $('#openList').innerHTML = mine.length ? mine.map(p => `<button type="button" data-path="${esc(p)}" title="${esc(p)}">${esc(p)}</button>`).join('')
+    : '<div class="hint">No scripts in this folder yet.</div>';
+  if (INFO.script) { $('#startBack').hidden = false; $('#startBack').textContent = `Back to ${INFO.script}`; $('#startTitle').textContent = 'Another script'; }
+  castRow('Narrator', 'af_heart');
+}
+
 // ================================================================== start
 (async () => {
   try {
     INFO = await api('/api/toolkit');
+    try { SOURCES = (await api('/api/info')).sources; } catch (e) {}
+    setupStart();
     if (INFO.script) await loadModel();
-    else {
-      $('#tab-script').disabled = true; $('#tab-script').title = 'Start with: jivetalker edit voice_script.txt';
-      $('#tabScriptSub').textContent = 'no script open'; $('#folder').textContent = '';
-    }
+    else { $('#tabScriptSub').textContent = 'no script open'; $('#folder').textContent = ''; }
     if (INFO.script) { const want = view; view = 'visual'; await setView(want); }
     saveState();
     const want = location.hash.slice(1);

@@ -5,6 +5,7 @@
     jivetalker check voice_script.txt
     jivetalker render voice_script.txt --out voice/ [--dry-run] [--only "c1.e1*"] [--prune]
     jivetalker edit voice_script.txt                  edit a script in the browser (Script + Voices tabs)
+    jivetalker edit [--demo]                          no script: create or open one in the page (or try the demo)
     jivetalker mixer --voices-dir voices/ [--script voice_script.txt]     blend and tune voices in the browser
     jivetalker voice recipe voices/mara.pt           print (and with --write, save) the stock blend it is made of
     jivetalker voice build voices/mara.recipe.json   rebuild a .pt from its recipe
@@ -215,7 +216,8 @@ def start_toolkit(a, script, start):
     m = Mixer(dirs, a.save_dir or (dirs[0] if dirs else None), script, a.model_dir)
     if script:
         doc = ScriptDoc(script, None, getattr(a, 'out', None), getattr(a, 'format', None) or 'ogg', m.source_for)
-    serve(Toolkit(m, doc, start), a.port, not a.no_browser)
+    serve(Toolkit(m, doc, start, Path.cwd(), getattr(a, 'format', None) or 'ogg', bool(a.save_dir)),
+          a.port, not a.no_browser)
 
 
 def cmd_mixer(a):
@@ -223,7 +225,11 @@ def cmd_mixer(a):
 
 
 def cmd_edit(a):
-    start_toolkit(a, a.script, 'script')
+    script = a.script
+    if a.demo:
+        from .toolkit import demo_script
+        script = str(demo_script())
+    start_toolkit(a, script, 'script')
 
 
 def cmd_voice(a):
@@ -295,7 +301,9 @@ def main(argv=None):
     mx.add_argument('--no-browser', action='store_true')
     mx.set_defaults(func=cmd_mixer)
     ed = sub.add_parser('edit', help='edit a voice script in the browser (with the voice mixer in another tab)')
-    ed.add_argument('script')
+    ed.add_argument('script', nargs='?', help='the voice script (none: create or open one in the page)')
+    ed.add_argument('--demo', action='store_true', help='open your copy of the demo script (made in '
+                                                        'jivetalker_demo/ under the current folder on first use)')
     ed.add_argument('--voices-dir', action='append', help='more folders of .pt voices for the mixer (repeatable; '
                                                           'the script\'s @voices folder is always included)')
     ed.add_argument('--save-dir', help='where the mixer saves (default: the script\'s @voices folder)')

@@ -12,6 +12,7 @@ jivetalker check  voice_script.txt
 jivetalker render voice_script.txt --out voice/ --dry-run
 jivetalker render voice_script.txt --out voice/
 jivetalker edit   voice_script.txt                                  # edit the script in the browser
+jivetalker edit                                                     # ... or create/open one in the page
 jivetalker mixer  --voices-dir voices/ --script voice_script.txt     # design voices in the browser
 ```
 
@@ -51,7 +52,19 @@ Tests (no model or audio needed): `python -m unittest discover -s tests`.
 ## Editing scripts: `jivetalker edit`
 
 `jivetalker edit voice_script.txt` opens a local page (127.0.0.1 only) with two tabs: **Script**, an editor for
-the voice script, and **Voices**, the mixer below. You don't need to remember the mark syntax:
+the voice script, and **Voices**, the mixer below. With no script, `jivetalker edit` (or `jivetalker.sh` /
+`jivetalker.bat` with no arguments) opens on a start page:
+
+- **New script**: a file name (relative to the folder you started in, or a full path) and a first cast of
+  stock or saved voices. Then build it in the Visual view: **Add a speaker** under Cast, and the **New line**
+  box under the lines (it suggests the next ID). Marks and directions go on afterwards, as for any line.
+- **Open a script**: the scripts found in that folder and the ones below it, or any path.
+- **Try the demo**: a short scene that shows off the styles, marks and ramps with Kokoro's stock voices. The
+  first time, it is copied to `jivetalker_demo/voice_script.txt` in the current folder; after that your copy
+  opens, edits and all (delete the folder to start over). `jivetalker edit --demo` opens it directly.
+
+**New or open…** next to the file name comes back to this page later. You don't need to remember the mark
+syntax:
 
 - **Visual** shows every line with its speaker, its direction and its marks. Marked words show how they'll
   sound: bold for stress, spaced out for drawn out, faded for de-stress, and a gap label for a pause. Settings
