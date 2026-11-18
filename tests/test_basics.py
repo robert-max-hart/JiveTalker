@@ -130,6 +130,14 @@ class Files(unittest.TestCase):
         job = {j.id: j for j in parse().jobs()[0]}['c1.e10']
         self.assertEqual(render.cache_key(job), GOLDEN_KEY)
 
+    def test_renamed_style_keeps_its_clips(self):
+        # 'monotone' was called 'deep': scripts that say deep still read, and both names give the same clip
+        jobs = {j.id: j for j in parse().jobs()[0]}
+        old = jobs['c1.e21']
+        self.assertEqual(old.direction.style, 'monotone')
+        new = Script.parse(SCRIPT.replace('c1.e21   Mara {deep}', 'c1.e21   Mara {monotone}')).jobs()[0]
+        self.assertEqual(render.cache_key(old), render.cache_key({j.id: j for j in new}['c1.e21']))
+
     def test_recipes_old_and_new_marker(self):
         with tempfile.TemporaryDirectory() as d:
             for marker in ('jivetalker_recipe', 'voicegen_recipe'):
@@ -214,7 +222,7 @@ class Languages(unittest.TestCase):
     def test_lang_setting(self):
         d = styles.parse_direction('deep, lang ja')
         self.assertEqual(styles.resolve(d)['lang'], 'ja')
-        self.assertEqual(str(d), 'deep, lang ja')
+        self.assertEqual(str(d), 'monotone, lang ja')                                 # deep: the old name
         self.assertNotIn('lang', styles.resolve(styles.parse_direction('lang en')))   # English: keys unchanged
         for bad in ('lang xx', 'lang'):
             with self.assertRaises(ValueError, msg=bad):

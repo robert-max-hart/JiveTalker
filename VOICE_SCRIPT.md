@@ -18,7 +18,7 @@ have your game's own tooling generate it (IDs are any text, so they can point ba
 c1.e3    Mara (thought): But what if nobody comes back?
 c1.e62   Doctor Lee {pause 1.5}: And have you ever [wanted](+) to leave, or start over?
 # she hesitates here
-c1.e117  Mara {deep, take 2}: It... it does feel calm, but I don’t know if it’s really [more](+) calm…
+c1.e117  Mara {monotone, take 2}: It... it does feel calm, but I don’t know if it’s really [more](+) calm…
 
 @ramp trance 0.2 -> 1.0
 c1.e170  Doctor Lee: Let everything else fade away…
@@ -64,11 +64,11 @@ A direction is a comma-separated list: at most one **style**, any **effects**, a
 | Style | Sound |
 |---|---|
 | `normal` | the voice as it is |
-| `trance 0.6` | slower, lower and flatter, with longer pauses. Depth 0 is light, 1 is deepest |
-| `deep` | dead-flat, slow monotone, for very deep trance and mantras |
+| `trance 0.6` | slower, lower and flatter, with longer pauses. Depth 0 is light, 1 is strongest |
+| `monotone` | flat and slow, with no melody at all: for a dazed, robotic or chanted delivery. Older scripts' `deep` still works and means the same |
 | `shout` | higher and livelier |
-| `soft` | quiet and gentle: the speaker's own voice, a little lower, with a trace of whisper mixed in (`breath 0.15`) |
-| `whisper` | breathy whisper, modelled on a real one |
+| `soft` | quiet and gentle: the speaker's own voice, a little lower, with a trace of whisper mixed in (`breath 0.05`) |
+| `whisper` | breathy whisper, modelled on a real one. **Not final**: its sound may still change, and lines that use it would then re-render |
 
 | Effect | Sound |
 |---|---|
@@ -87,7 +87,7 @@ A direction is a comma-separated list: at most one **style**, any **effects**, a
 | `take 2` | a different variation of the same line; try takes until one sounds right | 0 |
 | `floor 0.55` | ends voicing cleanly when pitch sags (cures growl at line ends) | from style |
 | `rise 5` | semitones of question rise on the word before each `?`: level at first, then sharp. Kokoro says questions like statements, so they rise automatically: one-word questions ("Mara?", "Twenty?") by 5, longer ones by 3, except when a clause starts with who/what/when/where/why/how/which (those fall). Setting `rise` applies it to every question in the line; `rise 0` turns it off | auto |
-| `breath 0.5` | mixes the speaker's own whisper into the voice: 0 = none, 1 = all whisper. Not for `whisper` itself | 0 (`soft`: 0.15) |
+| `breath 0.5` | mixes the speaker's own whisper into the voice: 0 = none, 1 = all whisper. Not for `whisper` itself | 0 (`soft`: 0.05) |
 | `lang ja` | the language the line is in: `en` or `ja` (see [Languages](#languages)). Can't be ramped | `en` |
 | `sing songs/x.musicxml` | the line is sung from this score (see [Sung lines](#sung-lines)). Can't be ramped | |
 

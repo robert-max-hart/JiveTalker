@@ -1,7 +1,7 @@
 # JiveTalker
 
 Directed voice lines from [Kokoro](https://github.com/hexgrad/kokoro) TTS. You write a plain-text voice
-script with one line per clip, giving a style (trance, deep monotone, shout, soft, whisper), effects (an echo
+script with one line per clip, giving a style (trance, monotone, shout, soft, whisper), effects (an echo
 for thoughts, a muffled wall), settings and word marks (stress, drawn-out words, pitch shapes, pauses), and
 JiveTalker renders the clips plus a manifest. It only re-renders what changed. The script format is in
 [VOICE_SCRIPT.md](VOICE_SCRIPT.md).

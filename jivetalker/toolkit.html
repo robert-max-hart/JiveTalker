@@ -398,14 +398,14 @@ function applySpec(text, toks, a, b, spec) {
   return {text: text.slice(0, A.cs) + repl + text.slice(B.ce), region: [A.cs, A.cs + repl.length]};
 }
 
-const STYLE_NAMES = ['normal', 'trance', 'deep', 'shout', 'soft', 'whisper'];
+const STYLE_NAMES = ['normal', 'trance', 'monotone', 'shout', 'soft', 'whisper'];
 const STYLE_HINT = {
   normal: 'The voice as it is.',
-  trance: 'Slower, lower and flatter, with longer pauses. Depth 0 is light, 1 is deepest.',
-  deep: 'Dead-flat, slow monotone, for very deep trance and mantras.',
+  trance: 'Slower, lower and flatter, with longer pauses. Depth 0 is light, 1 is strongest.',
+  monotone: 'Flat and slow, with no melody at all: for a dazed, robotic or chanted delivery.',
   shout: 'Higher and livelier.',
-  soft: 'Quiet and gentle: a little lower, with a trace of whisper mixed in (breath 0.15).',
-  whisper: 'Breathy whisper, modelled on a real one.'
+  soft: 'Quiet and gentle: a little lower, with a trace of whisper mixed in (breath 0.05).',
+  whisper: 'Breathy whisper, modelled on a real one. Not final: its sound may still change, and its lines would then re-render.'
 };
 const EFFECTS = [['internal', 'A light echo, for thoughts'], ['muffled', 'Through a door or wall: highs cut, a little room']];
 const SETTINGS = [

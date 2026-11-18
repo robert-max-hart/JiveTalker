@@ -2,7 +2,7 @@
 
 Resolution order: DEFAULTS -> the style -> the line's own settings.
 - `speed` in a direction sets the speaker's base speed; the style's speed then scales it
-  (so `{deep, speed 0.9}` = 0.9 x 0.75).
+  (so `{monotone, speed 0.9}` = 0.9 x 0.75).
 - `pitch` and `volume` in a direction add to the style's; every other setting replaces the style's value.
 """
 import re
@@ -28,14 +28,19 @@ def trance(depth):
 
 STYLES = {
     'normal': dict(),
-    'deep': dict(speed=0.75, pitch=-3.0, range_=0.0, pause=1.6),               # "m05": dead-flat monotone
+    'monotone': dict(speed=0.75, pitch=-3.0, range_=0.0, pause=1.6),           # "m05": dead-flat monotone
     'shout': dict(pitch=4.0, range_=1.4, floor=0.55),                             # "s06/s07"
-    'soft': dict(speed=0.9, pitch=-2.0, range_=0.6, floor=0.55, breath=0.15),   # own voice, a trace of whisper
+    'soft': dict(speed=0.9, pitch=-2.0, range_=0.6, floor=0.55, breath=0.05),   # own voice, a trace of whisper
     'whisper': dict(speed=0.88, range_=0.6),                                      # "w65", whisper renderer
 }
+# Old names still read. KEY_NAMES: the name a style goes by in the cache key, so renaming a style keeps the
+# clips made under its old name ('monotone' was called 'deep').
+STYLE_ALIASES = {'deep': 'monotone'}
+KEY_NAMES = {'monotone': 'deep'}
 STYLE_LEVEL_DB = {'soft': -8.0, 'whisper': -12.0}    # ear-weighted, relative to a normal line
 # (soft used to borrow af_nicole's delivery, which made e141 sound like another person; 2026-11-12 it became
-# the speaker's own voice with breath mixed in. `breath` works on any style except whisper.)
+# the speaker's own voice with breath mixed in; 2026-11-18 its breath went from 0.15 to 0.05. `breath` works on
+# any style except whisper.)
 EFFECTS = ('internal', 'muffled')                    # post effects that combine with any style (applied in order)
 
 # ---- word marks -> per-word edits
@@ -172,6 +177,7 @@ def parse_direction(text):
     for part in filter(None, (p.strip() for p in (text or '').split(','))):
         words = part.split()
         name = words[0].lower()
+        name = STYLE_ALIASES.get(name, name)
         if name in STYLES or name == 'trance':
             if styled:
                 raise ValueError(f'two styles in "{text}"')
@@ -231,7 +237,7 @@ def resolve(direction):
         s[k] = s[k] + v if k in ADDITIVE else v
     if s.get('lang') == languages.DEFAULT:     # English is the default: its lines keep their cache keys
         del s['lang']
-    s['style'] = name
+    s['style'] = KEY_NAMES.get(name, name)
     s['effects'] = list(direction.effects)
     s['level_db'] = STYLE_LEVEL_DB.get(name, 0.0) + s.pop('volume')
     return s
