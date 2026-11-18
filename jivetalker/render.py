@@ -70,6 +70,9 @@ def tuning(job, settings, lang=None):
         if stretch:
             t['stretch'] = [{k: styles.STRETCH.get(k) or styles.STRETCH_MORE[k] for k in stretch},
                             styles.STRETCH_CAP, styles.SUSTAIN_ENERGY, styles.SUSTAIN_SMOOTH]
+        shorten = sorted({m.shorten for m in mt.marks if m.shorten})
+        if shorten:
+            t['shorten'] = {k: styles.SHORTEN[k] for k in shorten}
         if any(m.pause for m in mt.marks):
             t['pause_marks'] = styles.PAUSE_MARKS
         if any(m.shape for m in mt.marks):

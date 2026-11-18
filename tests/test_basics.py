@@ -91,6 +91,22 @@ class WordMarks(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 marks.parse(bad)
 
+    def test_shorten(self):
+        m = marks.parse('the [blurry](<<|) ceiling')
+        self.assertEqual((m.plain, m.marks[0].shorten, m.marks[0].pause), ('the blurry ceiling', 2, 1))
+        self.assertEqual(styles.word_edit(m.marks[0])['shorten'], styles.SHORTEN[2])
+        for bad in ('[a](<<<<)', '[a](~<)'):
+            with self.assertRaises(ValueError, msg=bad):
+                marks.parse(bad)
+
+    def test_shorten_keys_only_its_lines(self):
+        # lines without < keep their keys (GOLDEN_KEY); a line with it depends on the levels it uses
+        job = {j.id: j for j in parse().jobs()[0]}['c1.e10']
+        s = styles.resolve(job.direction)
+        self.assertNotIn('shorten', render.tuning(job, s))
+        job.text = job.text.replace('Close', '[Close](<<)')
+        self.assertEqual(render.tuning(job, s)['shorten'], {2: styles.SHORTEN[2]})
+
 
 class Files(unittest.TestCase):
     def test_clip_names_are_safe_everywhere(self):

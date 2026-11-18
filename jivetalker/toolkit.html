@@ -311,7 +311,7 @@ function tokenize(text) {
 }
 
 function parseSpec(spec) {
-  const o = {stress: 0, stretch: 0, shape: [], pause: 0, pauseS: 0, pron: null, say: null, other: ''};
+  const o = {stress: 0, stretch: 0, shorten: 0, shape: [], pause: 0, pauseS: 0, pron: null, say: null, other: ''};
   const s0 = (spec || '').trim();
   if (!s0) return o;
   if (s0[0] === '/') { o.pron = s0.replace(/^\/|\/$/g, ''); return o; }
@@ -324,7 +324,7 @@ function parseSpec(spec) {
   if (ps) { o.pauseS = +ps[1]; s = s.replace(ps[0], ''); }
   for (const c of s) {
     if (c === '+') o.stress++; else if (c === '-') o.stress--;
-    else if (c === '~') o.stretch++; else if (c === '|') o.pause++; else o.other += c;
+    else if (c === '~') o.stretch++; else if (c === '<') o.shorten++; else if (c === '|') o.pause++; else o.other += c;
   }
   return o;
 }
@@ -332,7 +332,7 @@ function formatSpec(o) {
   if (o.pron !== null) return '/' + o.pron + '/';
   if (o.say !== null) return '=' + o.say;
   let s = o.stress > 0 ? '+'.repeat(o.stress) : '-'.repeat(-o.stress);
-  s += '~'.repeat(o.stretch);
+  s += '~'.repeat(o.stretch) + '<'.repeat(o.shorten);
   if (o.shape.length) s += '^' + o.shape.map(fmtNum).join('>');
   s += o.pauseS ? '|' + fmtNum(o.pauseS) : '|'.repeat(o.pause);
   return s + o.other;
@@ -613,6 +613,7 @@ function lineHTML(l) {
     if (o.stress > 0) st.push(`font-weight:${o.stress > 1 ? 800 : 700}`);
     if (o.stress < 0) st.push(`opacity:${Math.max(.4, .78 - .12 * -o.stress)}`);
     if (o.stretch) st.push(`letter-spacing:${(.05 * o.stretch).toFixed(2)}em`);
+    if (o.shorten) st.push(`letter-spacing:${(-.03 * o.shorten).toFixed(2)}em`);
     const pz = o.pauseS ? fmtNum(o.pauseS) + ' s' : o.pause ? (0.2 * o.pause).toFixed(1) + ' s' : '';
     const badge = t.spec !== null ? `<span class="badge">${esc(t.spec.length > 14 ? t.spec.slice(0, 13) + '…' : t.spec)}</span>` : '';
     return `${gap}${esc(t.pre)}<button class="${cls.join(' ')}" data-tok="${i}" style="${st.join(';')}">${esc(t.word)}${badge}</button>${esc(t.post)}${pz ? `<span class="pz">${pz}</span>` : ''}`;
@@ -660,6 +661,7 @@ const STRESS_HINT = {'-3': 'Strongest de-stress: shorter still. Past this Kokoro
   '-1': 'De-stress: lower, quieter and a little shorter.', '0': 'No stress.', '1': 'Stress: a pitch lift that eases down across the word, a little louder and longer.',
   '2': 'Strong stress.', '3': 'Level 3: an untuned extreme that may distort.', '4': 'Level 4: an untuned extreme that may distort.', '5': 'Level 5 (the most): an untuned extreme that may distort.'};
 const STRETCH_SUB = ['×1', '×1.25', '×1.5', '×1.75', '×2', '×2.5'];
+const SHORTEN_SUB = ['', '≤0.15 s', '≤0.10 s', '≤0.07 s'];
 let curve = null;       // the pitch points while dragging
 
 function renderInsp() {
@@ -695,7 +697,8 @@ function wordHTML(l) {
     const lab = v === 3 && o.stress > 3 ? '+'.repeat(o.stress) : v > 0 ? '+'.repeat(v) : v < 0 ? '-'.repeat(-v) : '·';
     return `<button class="${sv === v && o.pron === null && o.say === null ? 'on' : ''}" data-stress="${v === 3 && o.stress > 3 ? o.stress : v}" aria-pressed="${sv === v}"><span class="c">${lab}</span></button>`;
   }).join('');
-  const stretchBtns = [0, 1, 2, 3, 4, 5].map(v => `<button class="${o.stretch === v && o.pron === null && o.say === null ? 'on' : ''}" data-stretch="${v}"><span class="c">${v ? '~'.repeat(v) : '·'}</span><span class="s">${STRETCH_SUB[v]}</span></button>`).join('');
+  const len = o.stretch - o.shorten;    // < shortens, ~ draws out; they don't combine
+  const stretchBtns = [-3, -2, -1, 0, 1, 2, 3, 4, 5].map(v => `<button class="${len === v && o.pron === null && o.say === null ? 'on' : ''}" data-stretch="${v}"><span class="c">${v > 0 ? '~'.repeat(v) : v < 0 ? '&lt;'.repeat(-v) : '·'}</span><span class="s">${v >= 0 ? STRETCH_SUB[v] : SHORTEN_SUB[-v]}</span></button>`).join('');
   const pauseBtns = [0, 1, 2, 3, 4, 5].map(v => `<button class="${!o.pauseS && o.pause === v && o.pron === null && o.say === null ? 'on' : ''}" data-pause="${v}"><span class="c">${v ? '|'.repeat(v) : '·'}</span><span class="s">${v ? (0.2 * v).toFixed(1) + ' s' : 'none'}</span></button>`).join('');
   const cur = o.shape.map(fmtNum).join('>');
   const presets = PITCH.map(([code, name]) => {
@@ -710,13 +713,14 @@ function wordHTML(l) {
     if (o.stress > 0) summary.push((o.stress > 1 ? 'Strong stress' : 'Stressed') + ': lifted, louder, longer');
     if (o.stress < 0) summary.push('De-stressed: lower, quieter, shorter');
     if (o.stretch) summary.push('drawn out ' + STRETCH_SUB[Math.min(o.stretch, 5)]);
+    if (o.shorten) summary.push('shortened: no sound held past ' + SHORTEN_SUB[Math.min(o.shorten, 3)].slice(1));
     if (o.shape.length) summary.push(`pitch ^${cur} semitones`);
     if (o.pause || o.pauseS) summary.push(`${o.pauseS ? fmtNum(o.pauseS) : (0.2 * o.pause).toFixed(1)} s pause after`);
     if (o.other) summary.push(`unknown mark “${o.other}”`);
   }
   return head + `
     <div class="field"><span class="lab">Stress</span><div class="seg">${stressBtns}</div><div class="hint">${STRESS_HINT[String(o.stress)] || ''}</div></div>
-    <div class="field"><span class="lab">Draw out</span><div class="seg">${stretchBtns}</div></div>
+    <div class="field"><span class="lab">Length</span><div class="seg">${stretchBtns}</div><div class="hint">~ draws the word out. &lt; shortens it: no sound held past the limit, for a word the model drags out (a held vowel that fades into a gap).</div></div>
     <div class="field"><span class="lab">Pitch shape</span><div class="presets">${presets}${custom}</div>
       <div class="curve" id="curveBox"></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -733,7 +737,7 @@ function wordHTML(l) {
     <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-input="silent" ${o.say === '' ? 'checked' : ''}> Silent (on screen, not spoken)</label>
     <div class="hint" style="font-size:12px">A word holds marks or a respelling, not both.</div>
     <div class="summary">${esc(summary.join(' · ') || 'Plain: said as written.')}</div>
-    <div class="hint" style="font-size:12px">Keys: <kbd>+</kbd> <kbd>-</kbd> stress, <kbd>~</kbd> draw out, <kbd>|</kbd> pause, <kbd>^</kbd> pitch shapes, <kbd>0</kbd> clear, <kbd>←</kbd> <kbd>→</kbd> next word (<kbd>Shift</kbd> to extend), <kbd>↑</kbd> <kbd>↓</kbd> next line, <kbd>Space</kbd> play, <kbd>Esc</kbd> deselect.</div>`;
+    <div class="hint" style="font-size:12px">Keys: <kbd>+</kbd> <kbd>-</kbd> stress, <kbd>~</kbd> draw out, <kbd>&lt;</kbd> shorten, <kbd>|</kbd> pause, <kbd>^</kbd> pitch shapes, <kbd>0</kbd> clear, <kbd>←</kbd> <kbd>→</kbd> next word (<kbd>Shift</kbd> to extend), <kbd>↑</kbd> <kbd>↓</kbd> next line, <kbd>Space</kbd> play, <kbd>Esc</kbd> deselect.</div>`;
 }
 function miniCurve(pts, dim) {
   const d = pts.map((v, i) => `${i ? 'L' : 'M'}${(3 + 30 * i / (pts.length - 1)).toFixed(1)} ${(10 - v * 2.2).toFixed(1)}`).join(' ');
@@ -848,7 +852,7 @@ insp.addEventListener('click', e => {
   if (!l) return;
   if (act === 'clear') return editMark(() => parseSpec(''));
   if (b.dataset.stress !== undefined) return editMark(o => { clearForm(o); o.stress = +b.dataset.stress; });
-  if (b.dataset.stretch !== undefined) return editMark(o => { clearForm(o); o.stretch = +b.dataset.stretch; });
+  if (b.dataset.stretch !== undefined) return editMark(o => { clearForm(o); const v = +b.dataset.stretch; o.stretch = Math.max(v, 0); o.shorten = Math.max(-v, 0); });
   if (b.dataset.pause !== undefined) return editMark(o => { clearForm(o); o.pause = +b.dataset.pause; o.pauseS = 0; });
   if (b.dataset.shape !== undefined) return editMark(o => { clearForm(o); o.shape = b.dataset.shape ? b.dataset.shape.split('>').map(Number) : []; });
   if (act === 'addpt' || act === 'delpt') return editMark(o => {
@@ -1013,7 +1017,7 @@ function gotoSourceLine(n) {
 
 // completion: what fits at the caret
 const MARK_ITEMS = [['+', 'stress: a pitch lift, a little louder and longer'], ['++', 'strong stress'], ['-', 'de-stress: lower, quieter, shorter'],
-  ['--', 'stronger de-stress'], ['~', 'drawn out ×1.25'], ['~~', 'drawn out ×1.5'], ['+~', 'stressed and drawn out (marks combine)'],
+  ['--', 'stronger de-stress'], ['~', 'drawn out ×1.25'], ['~~', 'drawn out ×1.5'], ['<', 'shortened: no sound held past 0.15 s'], ['<<', 'shortened more: 0.10 s'], ['+~', 'stressed and drawn out (marks combine)'],
   ['^1.5', 'shift the pitch by semitones'], ['^2>-1', 'pitch glide: start 2 up, end 1 down'], ['^0>3>0', 'pitch arc'],
   ['|', 'pause after: 0.2 s (||| = 0.6 s, up to |||||)'], ['|0.8', 'pause after: exactly 0.8 s'], ['//', 'pronounce: IPA between the slashes'], ['=', 'say different words (nothing after = is silent)']];
 const DIR_ITEMS = [...STYLE_NAMES.map(n => [n === 'trance' ? 'trance 0.6' : n, STYLE_HINT[n]]), ...EFFECTS,
@@ -1104,7 +1108,8 @@ document.addEventListener('keydown', e => {
   if (hasWord) Object.assign(keys, {
     '+': () => editMark(o => { clearForm(o); o.stress = Math.min(5, o.stress + 1); }), '=': () => keys['+'](),
     '-': () => editMark(o => { clearForm(o); o.stress = Math.max(-3, o.stress - 1); }), '_': () => keys['-'](),
-    '~': () => editMark(o => { clearForm(o); o.stretch = (o.stretch + 1) % 6; }), '`': () => keys['~'](),
+    '~': () => editMark(o => { clearForm(o); o.shorten = 0; o.stretch = (o.stretch + 1) % 6; }), '`': () => keys['~'](),
+    '<': () => editMark(o => { clearForm(o); o.stretch = 0; o.shorten = (o.shorten + 1) % 4; }), ',': () => keys['<'](),
     '|': () => editMark(o => { clearForm(o); o.pauseS = 0; o.pause = (o.pause + 1) % 6; }), '\\': () => keys['|'](),
     '^': () => editMark(o => { clearForm(o); const c = o.shape.map(fmtNum).join('>'), i = PITCH.findIndex(p => p[0] === c); const nx = PITCH[(i + 1) % PITCH.length][0]; o.shape = nx ? nx.split('>').map(Number) : []; }),
     '0': () => editMark(() => parseSpec('')), Delete: () => keys['0'](), Backspace: () => keys['0']()

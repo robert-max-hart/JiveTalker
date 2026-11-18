@@ -172,6 +172,14 @@ class Engine:
             dur *= float(np.exp(rng.normal(0, 0.03 * human)))                 # line tempo
             for a, b in word_spans:
                 dur[a:b] *= float(np.exp(rng.normal(0, 0.07 * human)))       # each word
+        last = max((i for i, c in enumerate(ps) if c not in lg.PUNCT and c != ' '), default=-1) + 1
+        for (a, b), o in edits.items():                                     # < marks: cap each sound
+            if o.get('shorten'):
+                cap = o['shorten'] * 40.0 / speed                           # 40 duration frames per second
+                keep = dur[last].clone() if a <= last < b else None         # the line's last sound is exempt
+                dur[a:b] = torch.clamp(dur[a:b], max=cap)
+                if keep is not None:
+                    dur[last] = keep
         natural = dur.clone()                   # before marks lengthen words: what pitch/energy are predicted on
         for (a, b), o in edits.items():
             if o.get('dur', 1.0) != 1.0:

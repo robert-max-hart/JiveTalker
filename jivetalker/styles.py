@@ -48,6 +48,11 @@ STRETCH = {1: 1.25, 2: 1.5}     # 2026-11-13: was 1.5 / 2.0 (too long); every le
 # depends only on the levels it uses (render.tuning), so tuning one level rebuilds only the lines that use it.
 STRETCH_MORE = {3: dict(factor=1.75, cap=0.5), 4: dict(factor=2.0, cap=0.65), 5: dict(factor=2.5, cap=0.8)}
 MARK_LEVELS = 5         # most + or ~ a mark may stack
+# Shorten (<): no sound of the word lasts longer than this (seconds at speed 1, divided by speed). For a sound
+# the model holds far too long and lets fade to silence, which leaves a gap mid-phrase ("the blurry ... ceiling":
+# the final "i" was held 0.30 s at -51 dB). Ordinary sounds last 0.05-0.10 s, so <<< starts trimming them too.
+SHORTEN = {1: 0.15, 2: 0.10, 3: 0.07}
+SHORTEN_LEVELS = 3      # most < a mark may stack
 DESTRESS_LEVELS = 3     # most - a mark may stack
 
 
@@ -63,7 +68,7 @@ PAUSE_MAX = 5.0
 
 def word_edit(mark, lang=None):
     """a word Mark -> the engine's per-word edit: {'over', 'pitch', 'fall', 'gain', 'dur', 'max', 'sustain',
-    'cap', 'shape', 'pause_after', 'pause_exact'} (only what applies). lang: a code or Language (default English)"""
+    'cap', 'shorten', 'shape', 'pause_after', 'pause_exact'} (only what applies). lang: a code or Language (default English)"""
     stress, stretch = mark.stress, mark.stretch
     e = languages.get(lang).stress(stress)
     if stretch:
@@ -72,6 +77,8 @@ def word_edit(mark, lang=None):
         e['sustain'] = True
         if more:
             e['cap'] = more['cap']
+    if mark.shorten:
+        e['shorten'] = SHORTEN[mark.shorten]
     if mark.shape:
         e['shape'] = list(mark.shape)
     if mark.pause_s:

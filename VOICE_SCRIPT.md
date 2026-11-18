@@ -104,6 +104,7 @@ line's own. A later style replaces an earlier one, settings replace earlier sett
 | `[word](-)` | de-stress: lower, quieter and a little shorter |
 | `[word](--)`, `[word](---)` | stronger de-stress (three is the limit: shorter still and Kokoro starts swallowing sounds) |
 | `[word](~)`, `[word](~~)` | drawn out: ×1.25, ×1.5 the word's length (`~~~` ×1.75, `~~~~` ×2, `~~~~~` ×2.5) |
+| `[word](<)`, `[word](<<)`, `[word](<<<)` | shortened: no sound of the word lasts longer than 0.15 s, 0.10 s, 0.07 s (at speed 1; slower speeds allow a little more). For a word the model drags out, usually a held last vowel that fades into silence and leaves a gap mid-phrase ("the blurry … ceiling"). `<` and `<<` only touch the over-long sound; ordinary sounds last 0.05-0.10 s, so `<<<` starts trimming those too, and three is the limit. Doesn't combine with `~`; the line's last sound isn't shortened |
 | `[word](+++)` … `(+++++)`, `(~~~)` … `(~~~~~)` | more of the same: up to five of each stack (they combine too, `(+++~~~)`). Levels 3-5 are untuned extremes that may distort; each lifts the pitch more, louder and longer, and allows a bigger lift and longer sounds than levels 1-2 |
 | `[word](^1.5)`, `[word](^-2)` | shift the word's pitch by that many semitones, nothing else |
 | `[word](^2>-1)` | shape the pitch across the word: start 2 semitones up, glide to 1 down. Add points for more: `^0>3>0` rises in the middle and comes back. On several words (`[very carefully](^2>-1)`) the shape spans them all. It adds to the word's own melody and to any stress |
