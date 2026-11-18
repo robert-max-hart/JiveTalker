@@ -27,4 +27,4 @@ jivetalker = "jivetalker.cli:main"
 packages = ["jivetalker", "jivetalker.lang"]
 
 [tool.setuptools.package-data]
-jivetalker = ["mixer.html", "toolkit.html", "demo/voice_script.txt"]
+jivetalker = ["mixer.html", "toolkit.html", "voicepicker.js", "demo/voice_script.txt"]

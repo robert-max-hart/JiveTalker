@@ -47,7 +47,8 @@ AXIS_NAMES = {
                 'vocal-tract size: - smaller and airier, + larger and darker; the pitch hardly moves'),
         'pc4': ('clarity', 'clear', 'covered',
                 'darker, rounder vowels at + (as if through rounded lips); the Japanese female voices sit at +'),
-        'pc5': ('grit', 'clean', 'gravelly', 'hoarse and rough at +: the santa voices, bm_lewis, am_michael'),
+        'pc5': ('nasal', 'open', 'nasal', 'more nasal at + (by ear, 2026-11-18; first read as hoarse): the santa '
+                'voices, bm_lewis, am_michael sit at +'),
         'pc6': ('region', 'American', 'European',
                 'from af_kore, af_aoede, am_fenrir, am_puck (-) to the Spanish and Italian voices (+)'),
         'pc7': ('softness', 'harsh', 'soft', 'breathy and gentle at +; af_nicole sits at the + end'),
@@ -92,12 +93,16 @@ class Lab:
         self._mean = {}
 
     def add_dir(self, d):
-        """make the .pt voices in folder `d` available (a folder already added adds nothing new)"""
+        """make the .pt voices in folder `d` and its subfolders (one level: `d/villagers/bob.pt` is named
+        `villagers/bob`, which is also how a script in `d` casts it) available. A folder already added adds
+        nothing new."""
+        d = Path(d).expanduser()
         have = set(self.user.values())
-        for p in sorted(Path(d).expanduser().glob('*.pt')):
+        for p in sorted(d.glob('*.pt')) + sorted(d.glob('*/*.pt')):
             if str(p.resolve()) in have:
                 continue
-            name = p.stem if p.stem not in self.user else f'{Path(d).name}/{p.stem}'
+            rel = p.relative_to(d).with_suffix('').as_posix()
+            name = rel if rel not in self.user else f'{d.name}/{rel}'
             self.user[name] = str(p.resolve())
 
     # ------------------------------------------------------------------ packs

@@ -43,6 +43,19 @@ class Mixer:
         jobs, _ = Script.load(self.script).jobs(self.script_voices)
         return [{'id': j.id, 'speaker': j.speaker, 'direction': str(j.direction), 'text': j.text} for j in jobs]
 
+    @property
+    def cast(self):
+        """[{name, source}]: the script's speakers and the mixer's names for their voices (for the voice picker)"""
+        if not self.script:
+            return []
+        from .script import Script
+        try:
+            sc = Script.load(self.script)
+        except OSError:
+            return []
+        return [{'name': c.name, 'source': self.source_for(sc.voice_path(c.voice, self.script_voices))}
+                for c in sc.cast.values()]
+
     def source_for(self, voice_path):
         """the mixer's name for a voice (a stock name, or a .pt file in the voices folders), or None"""
         if voice_path in self.lab.stock:
@@ -55,7 +68,7 @@ class Mixer:
 
     # ------------------------------------------------------------------ API
     def info(self, _):
-        return {'sources': self.lab.sources(), 'axes': self.lab.axes_info(), 'lines': self.lines,
+        return {'sources': self.lab.sources(), 'axes': self.lab.axes_info(), 'lines': self.lines, 'cast': self.cast,
                 'save_dir': str(self.save_dir) if self.save_dir else None, 'halves': list(voicelab.HALVES)}
 
     def load(self, q):
@@ -88,8 +101,11 @@ class Mixer:
                             [f'mark on "{w}" did not land' for w in r.unplaced_marks]}
 
     def position(self, q):
+        """where the recipe's voice sits on every axis, and where its blend sits before the adjustments"""
+        bare = {h: dict(q['recipe'][h], axes={}) for h in voicelab.HALVES}
         with self.lock:
-            return {'position': self.lab.position(self.lab.build(q['recipe']))}
+            return {'position': self.lab.position(self.lab.build(q['recipe'])),
+                    'base': self.lab.position(self.lab.build(bare))}
 
     def variants(self, q):
         halves = [h for h in q.get('halves', voicelab.HALVES) if h in voicelab.HALVES]
@@ -101,9 +117,11 @@ class Mixer:
         name = str(q.get('name', '')).strip()
         if name.endswith('.pt'):
             name = name[:-3]
-        if not NAME_RE.match(name):
-            raise ValueError('name: letters, digits, _ - . only')
+        parts = name.split('/')
+        if len(parts) > 2 or not all(NAME_RE.match(x) for x in parts):
+            raise ValueError('name: letters, digits, _ - . only, with at most one folder in front (villagers/bob)')
         pt = self.save_dir / f'{name}.pt'
+        pt.parent.mkdir(parents=True, exist_ok=True)
         backup = None
         if pt.exists():
             if not q.get('overwrite'):

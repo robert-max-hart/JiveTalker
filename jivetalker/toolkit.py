@@ -31,6 +31,7 @@ from .common import STOCK_PREFIXES
 from .script import LINE_RE, Script
 
 PAGE = Path(__file__).with_name('toolkit.html')
+PICKER = Path(__file__).with_name('voicepicker.js')      # the searchable voice list both pages use
 # a script line split into the parts an edit may change: indent, ID, gap, !flags, speaker, {direction}, text
 EDIT_RE = re.compile(r'^(\s*)(\S+)(\s+)((?:![\w-]+\s+)*)([^{:]+?)\s*(?:\{([^}]*)\})?\s*:\s?(.*)$')
 FLAG_RE = re.compile(r'^[\w-]+$')
@@ -45,12 +46,16 @@ def version(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
 
-def rewrite_line(raw, text=None, direction=None, flags=None):
-    """`raw` (one script line) with its text, direction and/or flags replaced; None keeps that part as is.
-    Everything else (the ID column, spacing) is kept."""
+def rewrite_line(raw, text=None, direction=None, flags=None, line_id=None, speaker=None):
+    """`raw` (one script line) with its text, direction, flags, ID and/or speaker replaced; None keeps that part
+    as is. Everything else (the ID column, spacing) is kept."""
     m = EDIT_RE.match(raw)
     if not m:
         raise ValueError('not a script line')
+    if line_id is not None and (not line_id or re.search(r'\s', line_id) or line_id.startswith(('#', '@', '=='))):
+        raise ValueError('an ID is one word, not starting with # @ or ==')
+    if speaker is not None and (not speaker.strip() or any(c in speaker for c in '{}:\n\r')):
+        raise ValueError('a speaker name can\'t be empty or use { } :')
     for name, v in (('text', text), ('direction', direction)):
         if v is not None and ('\n' in v or '\r' in v):
             raise ValueError(f'{name}: one line only')
@@ -58,8 +63,12 @@ def rewrite_line(raw, text=None, direction=None, flags=None):
         raise ValueError('direction: no braces')
     if flags is not None and not all(FLAG_RE.match(f) for f in flags):
         raise ValueError('flags: letters, digits, _ and - only')
-    indent, lid, gap, old_flags, speaker, old_dir, old_text = m.groups()
-    if direction is None and flags is None:
+    indent, lid, gap, old_flags, old_speaker, old_dir, old_text = m.groups()
+    if line_id is not None and line_id != lid:
+        gap = ' ' * max(2, len(lid) + len(gap) - len(line_id)) if not gap.strip(' ') else gap    # keep the column
+        lid = line_id
+    speaker = old_speaker if speaker is None else speaker.strip()
+    if direction is None and flags is None and (lid, gap, speaker) == m.group(2, 3, 5):
         new = raw if text is None else raw[:m.start(7)] + text
     else:
         f = old_flags if flags is None else ''.join(f'!{x} ' for x in flags)
@@ -117,7 +126,7 @@ class ScriptDoc:
 
     # ------------------------------------------------------------------ edits
     def edit(self, q):
-        """{base, lineno, expect, text?, direction?, flags?}: change one line"""
+        """{base, lineno, expect, text?, direction?, flags?, id?, speaker?}: change one line"""
         with self.lock:
             text = self.read()
             if q.get('base') != version(text):
@@ -129,7 +138,15 @@ class ScriptDoc:
             body = lines[n - 1].rstrip('\r\n')
             if body != q.get('expect'):
                 raise Conflict()
-            new = rewrite_line(body, q.get('text'), q.get('direction'), q.get('flags'))
+            lid, who = q.get('id'), q.get('speaker')
+            if lid is not None or who is not None:
+                sc = self.script(text)
+                if who is not None and who.strip() not in sc.aliases:
+                    raise ValueError(f'{who} is not in the cast')
+                if lid is not None and any(ln.id == lid.strip() and ln.lineno != n for ln in sc.lines):
+                    raise ValueError(f'there is already a line {lid.strip()}')
+            new = rewrite_line(body, q.get('text'), q.get('direction'), q.get('flags'),
+                               lid.strip() if lid is not None else None, who)
             if new != body:
                 lines[n - 1] = new + lines[n - 1][len(body):]
                 self._write(''.join(lines))
@@ -164,6 +181,91 @@ class ScriptDoc:
             if at > 0 and not lines[at - 1].endswith(('\n', '\r')):
                 lines[at - 1] += nl         # the file's last line had no line break
             lines[at:at] = [x + nl for x in new]
+            self._write(''.join(lines))
+        return self.model()
+
+    def delete_line(self, q):
+        """{base, lineno, expect}: remove one line (the comments above it stay)"""
+        with self.lock:
+            text = self.read()
+            if q.get('base') != version(text):
+                raise Conflict()
+            lines = text.splitlines(keepends=True)
+            n = int(q['lineno'])
+            if not 1 <= n <= len(lines) or lines[n - 1].rstrip('\r\n') != q.get('expect'):
+                raise Conflict()
+            del lines[n - 1]
+            self._write(''.join(lines))
+        return self.model()
+
+    def _cast_line(self, physical, name):
+        """the index of the @cast line for `name`"""
+        for i, x in enumerate(physical):
+            st = x.strip()
+            if st.startswith('@cast') and st[5:6].isspace() and st[5:].partition('=')[0].strip() == name:
+                return i
+        raise ValueError(f'no @cast line for {name}')
+
+    def edit_cast(self, q, voice=None):
+        """{base, name, new_name?, direction?}: change a speaker's @cast line; `voice` (as the script writes it)
+        replaces the voice. A new name is also written into the lines (and ramps) that use the old one."""
+        name = str(q.get('name') or '').strip()
+        new_name = str(q.get('new_name') or name).strip()
+        d = q.get('direction')
+        if not new_name or any(c in new_name for c in '=|{}:#[]\r\n') or new_name.startswith(('@', '=')):
+            raise ValueError('a speaker name can\'t be empty or use = | { } : # [ ]')
+        if d is not None:
+            d = str(d).strip()
+            if '{' in d or '}' in d or '\n' in d:
+                raise ValueError('direction: one line, no braces')
+            if d:
+                styles.parse_direction(d)
+        with self.lock:
+            text = self.read()
+            if q.get('base') != version(text):
+                raise Conflict()
+            sc = self.script(text)
+            c = sc.cast.get(name)
+            if not c:
+                raise ValueError(f'{name} is not in the cast')
+            if new_name != name and new_name in sc.aliases:
+                raise ValueError(f'{new_name} is already in the cast')
+            lines = text.splitlines(keepends=True)
+            physical = text.splitlines()
+            i = self._cast_line(physical, name)
+            body = f'@cast {new_name} = {voice or c.voice}' + ''.join(f' | {a}' for a in c.aliases)
+            direction = c.direction if d is None else d
+            body += f' {{{direction}}}' if direction else ''
+            changes = {i: body}
+            if new_name != name:
+                for ln in sc.lines:
+                    if ln.speaker == name:
+                        changes[ln.lineno - 1] = rewrite_line(physical[ln.lineno - 1], speaker=new_name)
+                for r in sc.ramps:
+                    if r.speaker == name:
+                        changes[r.lineno - 1] = re.sub(r'(\bfor\s+).*$', lambda m: m.group(1) + new_name,
+                                                       physical[r.lineno - 1])
+            for k, v in changes.items():
+                lines[k] = v + lines[k][len(physical[k]):]
+            self._write(''.join(lines))
+        return self.model()
+
+    def delete_cast(self, q):
+        """{base, name}: remove a speaker who has no lines left"""
+        name = str(q.get('name') or '').strip()
+        with self.lock:
+            text = self.read()
+            if q.get('base') != version(text):
+                raise Conflict()
+            sc = self.script(text)
+            if name not in sc.cast:
+                raise ValueError(f'{name} is not in the cast')
+            n = sum(1 for ln in sc.lines if sc.aliases.get(ln.speaker) == name)
+            if n:
+                raise ValueError(f'{n} line{"s" if n > 1 else ""} still use{"" if n > 1 else "s"} {name}: give '
+                                 f'{"them" if n > 1 else "it"} another speaker, or delete {"them" if n > 1 else "it"}, first')
+            lines = text.splitlines(keepends=True)
+            del lines[self._cast_line(text.splitlines(), name)]
             self._write(''.join(lines))
         return self.model()
 
@@ -233,8 +335,9 @@ class ScriptDoc:
         cast_dirs = {c.name: parse(c.direction, f'@cast {c.name}') for c in sc.cast.values()}
         ramps = sc.ramp_info()
         by_id = {}
-        for j in jobs:
-            by_id.setdefault(j.id, j)
+        for j in jobs:          # a speaker whose voice file is missing is in the problems; it has no clip to plan
+            if str(j.voice).startswith(STOCK_PREFIXES) or Path(j.voice).exists():
+                by_id.setdefault(j.id, j)
         plan = {j.id: (key, action, src) for j, key, action, src in
                 render_mod.make_plan(list(by_id.values()), self.out, fmt)} if by_id else {}
         line_errors = {}
@@ -413,6 +516,8 @@ def find_scripts(home, depth=2, limit=40):
                     head = fh.read(8192)
             except OSError:
                 continue
+            if (Path(root) / f).resolve() == DEMO.resolve():
+                continue                    # the bundled master copy: the demo button opens a copy of it
             if re.search(r'^\s*@cast\s', head, re.M):
                 out.append((rel / f).as_posix())
                 if len(out) >= limit:
@@ -504,7 +609,8 @@ class Toolkit:
         return self._switch(demo_script(self.home))
 
     def voice_ref(self, source, folder):
-        """how a script in `folder` names the mixer voice `source`: a stock name, or a path to the .pt"""
+        """how a script whose voice names resolve in `folder` (its @voices folder) names the mixer voice `source`:
+        a stock name, a name in that folder ("mara", "villagers/bob"), or a path to the .pt"""
         if source in self.mixer.lab.stock:
             return source
         if source not in self.mixer.lab.user:
@@ -514,7 +620,7 @@ class Toolkit:
             rel = Path(os.path.relpath(p, folder))
         except ValueError:                  # another drive (Windows)
             return str(p)
-        return rel.with_suffix('').as_posix() if rel.parent == Path('.') else rel.as_posix()
+        return rel.as_posix() if rel.parts[0] == '..' else rel.with_suffix('').as_posix()
 
     def new_script(self, q):
         """{path, cast: [{name, voice}]}: create a script and edit it"""
@@ -541,7 +647,12 @@ class Toolkit:
 
     def add_cast(self, q):
         doc = self.need_doc()
-        return doc.add_cast(q, self.voice_ref(str(q.get('voice') or ''), doc.path.parent))
+        return doc.add_cast(q, self.voice_ref(str(q.get('voice') or ''), doc.script().voices_dir(doc.voices_override)))
+
+    def edit_cast(self, q):
+        doc = self.need_doc()
+        v = q.get('voice')
+        return doc.edit_cast(q, self.voice_ref(str(v), doc.script().voices_dir(doc.voices_override)) if v else None)
 
     def _job(self, line_id):
         jobs, errors = self.need_doc().script().jobs(self.doc.voices_override)
@@ -642,7 +753,9 @@ def serve(toolkit, port=8765, open_browser=True):
             '/api/script/render': toolkit.render_start, '/api/script/render/stop': toolkit.render_stop,
             '/api/script/open': toolkit.open_script, '/api/script/demo': toolkit.open_demo,
             '/api/script/new': toolkit.new_script, '/api/script/cast': toolkit.add_cast,
-            '/api/script/line': lambda q: doc().add_line(q)}
+            '/api/script/line': lambda q: doc().add_line(q),
+            '/api/script/line/delete': lambda q: doc().delete_line(q),
+            '/api/script/cast/edit': toolkit.edit_cast, '/api/script/cast/delete': lambda q: doc().delete_cast(q)}
     get = {'/api/info': mx.info, '/api/toolkit': toolkit.info,
            '/api/script': lambda q: doc().model(),
            '/api/script/version': lambda q: {'version': version(doc().read())},
@@ -667,6 +780,8 @@ def serve(toolkit, port=8765, open_browser=True):
             elif path == '/mixer':
                 from .mixer import PAGE as MIXER_PAGE
                 self.send(200, MIXER_PAGE.read_bytes(), 'text/html; charset=utf-8')
+            elif path == '/voicepicker.js':
+                self.send(200, PICKER.read_bytes(), 'text/javascript; charset=utf-8')
             elif path.startswith('/clips/'):
                 try:
                     body, ctype = toolkit.clip(unquote(path[len('/clips/'):]))

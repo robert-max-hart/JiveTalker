@@ -44,7 +44,7 @@ c1.e174  Doctor Lee {pause 2.2}: Now... Mara... close your [eyes](+~)...
 | Line | Meaning |
 |---|---|
 | `@voices ../voices` | the folder that voice names are looked up in, relative to the script |
-| `@cast Name = voice` | which voice a speaker uses: a name in `@voices` (`mara` → `mara.pt`), a path to a `.pt`, or a Kokoro stock voice (`af_nicole`) |
+| `@cast Name = voice` | which voice a speaker uses: a name in `@voices` (`mara` → `mara.pt`; `villagers/bob` → `villagers/bob.pt` in a subfolder), a path to a `.pt`, or a Kokoro stock voice (`af_nicole`) |
 | `@cast Name = voice {direction}` | a default direction for everything this speaker says |
 | `@defaults direction` | a default direction for every line |
 | `@format vorbis` | the clips' audio format: `ogg` (Ogg Opus, the default), `vorbis`, `wav` or `flac` (see [Audio formats](#audio-formats)) |

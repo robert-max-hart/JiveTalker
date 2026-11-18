@@ -70,11 +70,15 @@ syntax:
   sound: bold for stress, spaced out for drawn out, faded for de-stress, and a gap label for a pause. Settings
   a line inherits from `@cast`, `@defaults` or a ramp are shown with dashed borders.
 - **Click a word** (Shift-click to take in more words) and the inspector's **Word** tab sets its stress, draw-out, shortening, pause,
-  pronunciation or replacement words. Its pitch has a curve you shape by dragging the points. From the keyboard:
+  pronunciation or replacement words. Its pitch has a curve you shape by dragging the points (range ±4, ±8 or
+  ±12 semitones). From the keyboard:
   `+` `-` stress, `~` draw out, `<` shorten, `|` pause, `^` pitch shapes, `0` clear, arrow keys to move, Space
   to play, `p` to render a fresh preview.
-- The inspector's **Line** tab sets the style, effects, settings and take. It shows where each value
-  comes from (`@defaults`, `@cast`, `@ramp`, the line itself, or the style) and what the line ends up with.
+- The inspector's **Line** tab edits the line's text, ID and speaker, and sets its style, effects, settings and
+  take. It shows where each value comes from (`@defaults`, `@cast`, `@ramp`, the line itself, or the style) and
+  what the line ends up with. **Delete line** is at the bottom (Undo brings it back).
+- **Cast**: **Edit** on a speaker renames them (their lines and ramps follow), recasts the voice, sets the
+  direction for all their lines, or deletes a speaker who has no lines left. **Tune** opens the voice in Voices.
 - **Play** plays the line's clip if it is up to date, or renders a preview. **Render** renders the lines that
   changed into the clip folder (`--out`, default `voice/` next to the script), like `jivetalker render`.
 - **Source** is the file itself, with colours and a list of what fits at the cursor: marks after `[word](`,
@@ -100,7 +104,11 @@ the mixer sets each half on its own:
 - **Blend**: any stock or own voices with weights. Weights are divided by their sum, so a negative weight
   pushes away from a voice (`mara 1.2, af_nicole -0.2`).
 - **Adjust**: sliders along `gender`, `accent` and the eight principal axes of the 43 stock voices, in
-  standard deviations. A mark on each slider shows where the current voice sits. Each slider is named for
+  standard deviations. Each knob shows where the voice sits on that axis (0 is the stock voices' average; the
+  stock voices fall within about ±3.4), so dragging it sets the voice's position and the recipe stores the
+  difference as an adjustment. Once a slider is adjusted, a tick marks where the blend sat before; clicking
+  the number undoes it. `gender` and `accent` overlap the numbered axes, so moving one of them moves some other
+  knobs too. Each slider is named for
   what it does to that half (e.g. timbre *size*, delivery *pitch*, *expression*, *tempo*; hover for details,
   `AXIS_NAMES` in `voicelab.py`); recipes store the ids (`gender`, `pc6`, ...), which never change.
 - **Variations**: six random nudges along the principal axes; keep the best and repeat with a smaller step.
@@ -108,6 +116,12 @@ the mixer sets each half on its own:
   `--script`; every take is kept so you can replay or restore it, and *Compare with* plays another voice.
 - **Save** writes `<name>.pt` plus `<name>.recipe.json` (the blend and adjustments) to `--save-dir` (default:
   the first `--voices-dir`). Replacing a file keeps the old one as `.bak-<time>`.
+
+**Finding voices**: every voice list (in both tabs) is a search box with groups: *Recent*, *In this script*
+(with who uses each voice), your own voices, then Kokoro's stock voices by language and gender. Type part of a
+name, a language or "male"/"female" to narrow it. To organise your own voices, put them in subfolders of the voices
+folder (one level: `voices/villagers/bob.pt`); each subfolder is a group, and a script casts it as
+`villagers/bob`. Save as `villagers/bob` to save into a subfolder.
 
 Loading a voice uses its `.recipe.json` if there is one; otherwise the mixer works out the stock blend it was
 made from (exact for plain blends), or uses the file as it is.

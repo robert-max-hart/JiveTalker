@@ -24,6 +24,7 @@
   --accent: #7f9bff; --accent-soft: #263055; --warn: #f0925a; --ok: #6cc690;
   --timbre: #7f9bff; --delivery: #cc8cf0; color-scheme: dark }
 * { box-sizing: border-box }
+[hidden] { display: none !important }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font);
   padding-block: 16px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px)) }
@@ -43,6 +44,8 @@ textarea { width: 100%; resize: vertical }
 input[type=range] { width: 100%; accent-color: var(--accent); min-width: 0 }
 .top { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px }
 .top .grow { flex: 1 }
+.top .vp-btn { width: 15em }
+#saveName { width: 13em }
 #saveMsg:not(:empty) { margin: -6px 0 14px }
 .status { color: var(--muted); font-size: 13px }
 .status.err { color: var(--warn) }
@@ -103,13 +106,13 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
   <h1>JiveTalker Mixer</h1>
   <div class="inline">
     <label class="lab" for="loadSel">Start from</label>
-    <select id="loadSel"></select>
+    <select id="loadSel" data-voicepick aria-label="Start from"></select>
     <button id="loadBtn" title="Replace the voice below with this one">Load</button>
   </div>
   <div class="grow status" id="status">Loading…</div>
   <div class="inline">
     <label class="lab" for="saveName">Save as</label>
-    <input type="text" id="saveName" placeholder="a name, e.g. narrator_v2" style="width:13em">
+    <input type="text" id="saveName" placeholder="a name, e.g. narrator_v2 or villagers/bob">
     <button class="primary" id="saveBtn">Save voice</button>
   </div>
 </div>
@@ -140,7 +143,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
       </div>
       <div class="inline">
         <label class="lab" for="cmpSel">Compare with</label>
-        <select id="cmpSel" class="grow"></select>
+        <select id="cmpSel" class="grow" data-voicepick aria-label="Compare with"></select>
         <button id="cmpBtn">Play</button>
       </div>
       <audio id="player" controls style="width:100%"></audio>
@@ -173,6 +176,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
   </div>
 </div>
 
+<script src="/voicepicker.js"></script>
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -182,7 +186,6 @@ function tellParent(msg) { if (EMBEDDED) window.parent.postMessage(Object.assign
 const HALVES = ['timbre', 'delivery'];
 let info = null;
 let recipe = blank();
-let lastPos = null;
 let takeN = 0;
 
 function blank() { return {jivetalker_recipe: 1, timbre: {mix: {}, axes: {}}, delivery: {mix: {}, axes: {}}}; }
@@ -222,12 +225,12 @@ function buildStrip(half) {
       <span class="hint">${half === 'timbre' ? 'what the voice sounds like' : 'intonation, pacing, energy'}</span></div>
     <h3>Blend</h3>
     <div class="mix"></div>
-    <div class="addrow"><select id="add-${half}" data-placeholder="+ Add a voice to the blend…" aria-label="Add a voice to the ${half} blend"></select></div>
+    <div class="addrow"><select id="add-${half}" data-voicepick data-placeholder="+ Add a voice to the blend…" aria-label="Add a voice to the ${half} blend"></select></div>
     <div class="btnrow"><button class="small" data-copy>Copy blend from ${other}</button></div>
-    <h3>Adjust <span class="hint" style="text-transform:none;letter-spacing:0">(the tick marks where the voice sits now; click a number to reset it)</span></h3>
+    <h3>Adjust <span class="hint" style="text-transform:none;letter-spacing:0">(where the voice sits; 0 is the stock voices' average. The tick marks the blend before adjusting; click a number to undo)</span></h3>
     <div class="axes"></div>
     <div class="btnrow"><button class="small" data-reset>Reset adjustments</button></div>`;
-  fillSourceSelect(el.querySelector('select'));
+  fillSourceSelect(el.querySelector('select')); VoicePicker.enhance(el.querySelector('select'));
   el.querySelector('select').onchange = e => {
     const n = e.target.value; e.target.value = '';
     if (!n) return;
@@ -240,15 +243,19 @@ function buildStrip(half) {
   for (const a of info.axes[half]) {
     const row = document.createElement('div'); row.className = 'axrow';
     row.innerHTML = `<span class="lbl"></span><span class="end"></span>
-      <span class="track"><input type="range" min="-3" max="3" step="0.05" value="0" id="ax-${half}-${a.id}"><i class="tick"></i></span>
-      <span class="end hi"></span><span class="val" title="click to reset">0.00</span>`;
+      <span class="track"><input type="range" min="-${AX_MAX}" max="${AX_MAX}" step="0.05" value="0" id="ax-${half}-${a.id}"><i class="tick"></i></span>
+      <span class="end hi"></span><span class="val">0.00</span>`;
     const tip = `${a.label}: ${a.lo} ↔ ${a.hi}\n${a.hint || ''}`;
     for (const [sel, text] of [['.lbl', a.label], ['.end', a.lo], ['.end.hi', a.hi]]) {
       const e = row.querySelector(sel); e.textContent = text; e.title = tip;
     }
     row.querySelector('input[type=range]').setAttribute('aria-label', `${half} ${a.label}`);
     const r = row.querySelector('input[type=range]'), v = row.querySelector('.val');
-    r.oninput = () => { recipe[half].axes[a.id] = +r.value; v.textContent = (+r.value).toFixed(2); v.classList.toggle('on', +r.value !== 0); changedSoft(); };
+    r.oninput = () => {      // the knob is where the voice should sit: the adjustment is the difference
+      const adj = Math.round((+r.value - unadjusted(half, a.id)) * 100) / 100;
+      if (Math.abs(adj) < 0.005) delete recipe[half].axes[a.id]; else recipe[half].axes[a.id] = adj;
+      v.textContent = (+r.value).toFixed(2); v.classList.toggle('on', !!recipe[half].axes[a.id]); changedSoft();
+    };
     r.onchange = () => changed();
     v.onclick = () => { delete recipe[half].axes[a.id]; changed(); };
     ax.append(row);
@@ -283,14 +290,29 @@ function updatePct(half) {
     const el = row.querySelector('.pct'); el.textContent = p.toFixed(0) + '%'; el.classList.toggle('neg', p < 0);
   });
 }
+// Each slider shows where the voice sits on its axis (stock-voice standard deviations from the stock average).
+// Recipes store adjustments, so a slider's adjustment = where its knob is - where the voice would sit without
+// it. Moving an axis by 1 moves its own position by exactly 1; gender and accent also overlap the numbered
+// axes, so moving one of those moves some other knobs too (once the new position arrives from the server).
+const AX_MAX = 4;
+let lastPos = null, basePos = null, posAxes = null;    // positions from the server, and the adjustments they were for
+function unadjusted(half, id) {     // where the voice would sit on this axis without its own adjustment
+  if (!lastPos) return 0;
+  return lastPos[half][id] - ((posAxes && posAxes[half][id]) || 0);
+}
 function syncAxes(half) {
   for (const a of info.axes[half]) {
     const r = $(`#ax-${half}-${a.id}`); const v = r.closest('.axrow').querySelector('.val');
-    const x = recipe[half].axes[a.id] || 0; r.value = x; v.textContent = x.toFixed(2); v.classList.toggle('on', x !== 0);
+    const adj = recipe[half].axes[a.id] || 0;
+    const x = lastPos ? unadjusted(half, a.id) + adj : adj;
+    r.value = x; v.textContent = x.toFixed(2); v.classList.toggle('on', adj !== 0);
+    v.title = adj ? `adjusted ${adj > 0 ? '+' : ''}${adj.toFixed(2)} from the blend: click to undo` : 'the blend as it is';
+    v.style.cursor = adj ? 'pointer' : 'default';
     const tick = r.parentElement.querySelector('.tick');
-    const p = lastPos && lastPos[half] ? lastPos[half][a.id] : null;
-    tick.hidden = p == null; if (p != null) tick.style.left = `calc(8px + (100% - 16px) * ${(Math.max(-3, Math.min(3, p)) + 3) / 6})`;
-    tick.title = p != null ? `this voice: ${p.toFixed(2)}` : '';
+    const p = basePos ? basePos[half][a.id] : null;
+    tick.hidden = p == null || !adj;
+    if (p != null) tick.style.left = `calc(8px + (100% - 16px) * ${(Math.max(-AX_MAX, Math.min(AX_MAX, p)) + AX_MAX) / (2 * AX_MAX)})`;
+    tick.title = p != null ? `the blend before adjusting: ${p.toFixed(2)}` : '';
   }
 }
 function syncAll() { for (const h of HALVES) { renderMix(h); syncAxes(h); } $('#recipeView').textContent = JSON.stringify(recipe, null, 2); }
@@ -300,7 +322,14 @@ function changed() {
   syncAll();
   clearTimeout(posTimer);
   posTimer = setTimeout(async () => {
-    try { if (valid(recipe)) { lastPos = (await api('/api/position', {recipe})).position; for (const h of HALVES) syncAxes(h); } } catch (e) {}
+    try {
+      if (valid(recipe)) {
+        const sent = clone(recipe), res = await api('/api/position', {recipe: sent});
+        if (JSON.stringify(sent) !== JSON.stringify(recipe)) return;        // changed meanwhile: a newer request follows
+        lastPos = res.position; basePos = res.base; posAxes = {timbre: sent.timbre.axes, delivery: sent.delivery.axes};
+        for (const h of HALVES) syncAxes(h);
+      }
+    } catch (e) {}
   }, 250);
 }
 function valid(r) { return HALVES.every(h => Math.abs(Object.values(r[h].mix).reduce((a, b) => a + b, 0)) > 1e-6); }
@@ -433,6 +462,8 @@ $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
   try {
     info = await api('/api/info');
     fillSourceSelect($('#loadSel')); fillSourceSelect($('#cmpSel'));
+    VoicePicker.inScript = () => info.cast || [];
+    VoicePicker.enhance($('#loadSel')); VoicePicker.enhance($('#cmpSel'));
     for (const h of HALVES) buildStrip(h);
     $('#saveDir').textContent = info.save_dir ? 'Save writes <name>.pt and <name>.recipe.json to ' + info.save_dir : 'No save folder: start with --voices-dir or --save-dir to save voices.';
     if (!info.save_dir) { $('#saveBtn').disabled = true; $('#saveBtn').title = 'No save folder: start with --voices-dir or --save-dir'; }

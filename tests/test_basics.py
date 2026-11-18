@@ -180,6 +180,73 @@ class Editor(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 rewrite_line(raw, **bad)
 
+    def test_voices_in_subfolders(self):
+        from types import SimpleNamespace
+        from jivetalker.toolkit import DEMO, Toolkit, find_scripts
+        with tempfile.TemporaryDirectory() as d:
+            v = Path(d) / 'voices'
+            for f in ('mara.pt', 'villagers/bob.pt', 'guards/captain.pt', 'a/b/too_deep.pt'):
+                (v / f).parent.mkdir(parents=True, exist_ok=True); (v / f).write_bytes(b'')
+            lab = voicelab.Lab(SimpleNamespace(torch=None), [v])
+            self.assertEqual(sorted(lab.user), ['guards/captain', 'mara', 'villagers/bob'])   # one level down
+            tk = Toolkit(SimpleNamespace(lab=lab, eng=None, lock=None), home=d)
+            # names are relative to the script's @voices folder, the way voice_path() reads them back
+            self.assertEqual(tk.voice_ref('villagers/bob', v), 'villagers/bob')
+            self.assertEqual(tk.voice_ref('mara', v), 'mara')
+            self.assertEqual(tk.voice_ref('mara', v / 'villagers'), '../mara.pt')
+            self.assertEqual(tk.voice_ref('af_heart', v), 'af_heart')
+            sc = Script.parse('@voices voices\n@cast Bob = villagers/bob\n', Path(d) / 's.txt')
+            self.assertEqual(Path(sc.voice_path('villagers/bob')), v / 'villagers' / 'bob.pt')
+        self.assertNotIn(DEMO.relative_to(DEMO.parents[2]).as_posix(), find_scripts(DEMO.parents[2]))
+
+    def test_change_id_and_speaker(self):
+        from jivetalker.toolkit import rewrite_line
+        self.assertEqual(rewrite_line('c1.e10   Mara: Close your [eyes](+~)...', line_id='c1.e9'),
+                         'c1.e9    Mara: Close your [eyes](+~)...')           # the speaker column stays put
+        self.assertEqual(rewrite_line('c1.e4    !check ??? {whisper}: Who?', speaker='narrator'),
+                         'c1.e4    !check narrator {whisper}: Who?')
+        for bad in (dict(line_id='two words'), dict(line_id=''), dict(speaker='a: b')):
+            with self.assertRaises(ValueError, msg=bad):
+                rewrite_line('c1.e1    narrator: hi', **bad)
+
+    def test_edit_and_delete_lines_and_cast(self):
+        from jivetalker.toolkit import ScriptDoc
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / 'voice_script.txt'
+            p.write_bytes(SCRIPT.replace('\n', '\r\n').encode('utf-8'))
+            doc = ScriptDoc(p)
+            m = doc.model()
+            line = lambda i: next(x for x in m['items'] if x.get('id') == i)
+            e1 = line('c1.e1')
+            with self.assertRaises(ValueError):                                 # IDs stay unique
+                doc.edit({'base': m['version'], 'lineno': e1['lineno'], 'expect': e1['raw'], 'id': 'c1.e3'})
+            with self.assertRaises(ValueError):                                 # speakers come from the cast
+                doc.edit({'base': m['version'], 'lineno': e1['lineno'], 'expect': e1['raw'], 'speaker': 'Nobody'})
+            m = doc.edit({'base': m['version'], 'lineno': e1['lineno'], 'expect': e1['raw'], 'id': 'c1.e2',
+                          'speaker': 'Mara'})
+            self.assertEqual(line('c1.e2')['raw'], 'c1.e2    Mara: Mara sat on the bench.')
+            # rename: the @cast line, the lines that use the name, and the ramp's "for"; not the alias's lines
+            text = SCRIPT.replace('@ramp trance 0.2 -> 1.0', '@ramp trance 0.2 -> 1.0 for Mara')
+            p.write_bytes(text.replace('\n', '\r\n').encode('utf-8'))
+            m = doc.edit_cast({'base': doc.model()['version'], 'name': 'Mara', 'new_name': 'Mira',
+                               'direction': 'pitch -2'}, 'af_sky')
+            out = p.read_bytes().decode('utf-8')
+            self.assertIn('@cast Mira = af_sky | ??? {pitch -2}\r\n', out)
+            self.assertIn('@cast Mara (thought) = af_bella {internal}\r\n', out)
+            self.assertIn('c1.e10   Mira: Close', out)
+            self.assertIn('c1.e4    ??? {whisper}', out)
+            self.assertIn('@ramp trance 0.2 -> 1.0 for Mira\r\n', out)
+            self.assertEqual(m['summary']['errors'], 0)
+            with self.assertRaises(ValueError):                                 # Mira still has lines
+                doc.delete_cast({'base': m['version'], 'name': 'Mira'})
+            th = line('c1.e3')
+            m = doc.delete_line({'base': m['version'], 'lineno': th['lineno'], 'expect': th['raw']})
+            self.assertNotIn('c1.e3', p.read_text(encoding='utf-8'))
+            self.assertIn('# a comment that belongs to the next line', p.read_text(encoding='utf-8'))
+            m = doc.delete_cast({'base': m['version'], 'name': 'Mara (thought)'})
+            self.assertNotIn('Mara (thought)', p.read_text(encoding='utf-8'))
+            self.assertEqual(m['summary']['errors'], 0)
+
     def test_build_a_script_from_scratch(self):
         from jivetalker.toolkit import Conflict, ScriptDoc, find_scripts, new_script_text
         with tempfile.TemporaryDirectory() as d:
