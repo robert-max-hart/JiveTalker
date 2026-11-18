@@ -75,6 +75,11 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .seg button.on { background: var(--accent); color: var(--on-accent) }
 .seg button .c { font: 600 12.5px var(--mono) }
 .seg button .s { font-size: 10px; opacity: .75 }
+/* a seg too long for one row: a grid of cells with 1px rules between them */
+.seg.grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--line) }
+.seg.grid button, .seg.grid span.fill { border: 0; background: var(--panel) }
+.seg.grid button:hover { background: var(--accent-soft) }
+.seg.grid button.on { background: var(--accent) }
 .work { display: grid; grid-template-columns: 250px minmax(0, 1fr) 370px; gap: 16px; padding: 14px 16px 40px; align-items: start }
 .side, .insp { position: sticky; top: 64px; max-height: calc(100vh - 76px); overflow: auto; display: flex; flex-direction: column; gap: 12px; min-width: 0 }
 @media (max-width: 1180px) {
@@ -106,8 +111,8 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 2px }
 .lid { font: 12px var(--mono); color: var(--muted); border: 0; background: transparent; padding: 0; min-height: 0 }
 .spk { font-weight: 600; font-size: 13px }
-.status { margin-left: auto; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; color: var(--accent-ink) }
-.status i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent) }
+.status { margin-left: auto; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; color: var(--muted) }
+.status i { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid currentColor }
 .txt { font-size: 15.5px; line-height: 1.7 }
 .tok { border: 0; background: transparent; padding: 1px 2px; margin: 0 -1px; border-radius: 4px; min-height: 0; line-height: 1.5; cursor: pointer }
 .tok:hover { background: var(--accent-soft) }
@@ -118,7 +123,7 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .pz { font: 10.5px var(--mono); color: var(--muted); border-left: 2px solid var(--muted); border-right: 2px solid var(--muted); padding: 0 3px; margin: 0 3px; white-space: nowrap }
 .cmt { color: var(--muted); font-style: italic; font-size: 12.5px }
 .err { color: var(--warn); font-size: 12.5px }
-.rawline { margin-top: 6px; font: 12px var(--mono); padding: 6px 10px; border-radius: 6px; background: var(--bg); overflow-x: auto; white-space: pre }
+.rawline { margin-top: 6px; font: 12px var(--mono); padding: 6px 10px; border-radius: 6px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere }
 .sec { padding: 16px 20px 6px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 10px }
 .sec::after { content: ""; flex: 1; height: 1px; background: var(--line) }
 .rampb { margin: 8px 14px 2px; padding: 6px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px }
@@ -144,10 +149,10 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 .styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px }
 .styles button.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent) }
 .styles button.inherited { box-shadow: inset 0 0 0 2px var(--accent); }
-.fx { display: flex; align-items: center; gap: 10px; text-align: left; width: 100% }
-.fx .box2 { width: 16px; height: 16px; flex: none; border-radius: 4px; border: 2px solid currentColor }
-.fx.on { background: var(--delivery-soft); color: var(--delivery); border-color: transparent }
-.fx.on .box2 { background: currentColor }
+.fxbtn { display: flex; align-items: center; gap: 10px; text-align: left; width: 100% }
+.fxbtn .box2 { width: 16px; height: 16px; flex: none; border-radius: 4px; border: 2px solid currentColor }
+.fxbtn.on { background: var(--delivery-soft); color: var(--delivery); border-color: transparent }
+.fxbtn.on .box2 { background: currentColor }
 .srow { display: grid; grid-template-columns: 58px minmax(0, 1fr) 64px; gap: 0 8px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line) }
 .srow input { width: 64px; padding: 3px 6px; font: 12.5px var(--mono) }
 .srow .eff { grid-column: 2 / 4; font: 11px var(--mono); color: var(--muted) }
@@ -201,7 +206,7 @@ kbd { font: 600 11px var(--mono); border: 1px solid var(--line); border-bottom-w
 <body>
 
 <header class="bar">
-  <div class="brand"><b>JiveTalker</b><span class="mono hint" id="folder"></span></div>
+  <div class="brand"><b>JiveTalker</b></div>
   <nav class="tabs" role="tablist" aria-label="Tools">
     <button role="tab" id="tab-script" aria-selected="true" data-tab="script"><b>Script</b><small id="tabScriptSub">voice script</small></button>
     <button role="tab" id="tab-voices" aria-selected="false" data-tab="voices"><b>Voices</b><small>mixer</small></button>
@@ -472,7 +477,7 @@ function setModel(m) {
     if (sel.a >= n) sel = {id: sel.id, a: null, b: null}; else sel.b = Math.min(sel.b, n - 1);
   }
   if (!sel && LINES.length) sel = {id: LINES[0].id, a: null, b: null};
-  $('#fileName').textContent = M.name; $('#tabScriptSub').textContent = M.name; $('#folder').textContent = M.folder + '/';
+  $('#fileName').innerHTML = `<span class="hint" style="font-weight:400">${esc(M.folder)}/</span>${esc(M.name)}`; $('#fileName').title = M.path; $('#tabScriptSub').textContent = M.name;
   document.title = `${M.name} · JiveTalker`;
   if (!srcDirty) setSource(M.text);
   renderAll();
@@ -574,7 +579,7 @@ function renderSide() {
       <span class="hint">${c.lines}</span>
       <span></span>
       <span class="mono hint" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis" title="${esc(c.voice)}">${esc(c.voice)}${c.direction ? ' {' + esc(c.direction) + '}' : ''}${c.found ? '' : ' · not found'}</span>
-      <button class="small" data-voices="${esc(c.name)}" ${c.source ? '' : 'disabled title="not in the mixer\'s voice folders"'}>Voices</button>
+      <button class="small" data-voices="${esc(c.name)}" ${c.source ? `title="Open ${esc(c.voice)} in the Voices tab"` : 'disabled title="not in the mixer\'s voice folders"'}>Tune</button>
     </div>`).join('');
   const outline = [];
   for (const it of M.items) {
@@ -711,7 +716,7 @@ function lineHTML(l) {
   if (l.errors.length && !l.settings && l.direction) chips.push(`<span class="chip warn">{${esc(l.direction)}}</span>`);
   const flags = l.flags.map(f => `<span class="chip warn">!${esc(f)} <button class="plain" data-unflag="${esc(f)}" aria-label="Clear the flag ${esc(f)}" title="Clear the flag">×</button></span>`).join('');
   let status = '';
-  if (l.status === 'render') status = '<span class="status"><i></i>needs render</span>';
+  if (l.status === 'render') status = '<span class="status" title="Play renders a preview; Render makes its clip"><i></i>not rendered</span>';
   else if (l.status === 'reuse') status = '<span class="status" style="color:var(--muted)">clip to rename</span>';
   const u = unknown[l.id], unk = u && u.text === l.text ? u.words : [];
   const toks = tokenize(l.text);
@@ -825,7 +830,7 @@ function wordHTML(l) {
   }
   return head + `
     <div class="field"><span class="lab">Stress</span><div class="seg">${stressBtns}</div><div class="hint">${STRESS_HINT[String(o.stress)] || ''}</div></div>
-    <div class="field"><span class="lab">Length</span><div class="seg">${stretchBtns}</div><div class="hint">~ draws the word out. &lt; shortens it: no sound held past the limit, for a word the model drags out (a held vowel that fades into a gap).</div></div>
+    <div class="field"><span class="lab">Length</span><div class="seg grid">${stretchBtns}<span class="fill"></span></div><div class="hint">~ draws the word out. &lt; shortens it: no sound held past the limit, for a word the model drags out (a held vowel that fades into a gap).</div></div>
     <div class="field"><span class="lab">Pitch shape</span><div class="presets">${presets}${custom}</div>
       <div class="curve" id="curveBox"></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -914,7 +919,7 @@ function lineInspHTML(l) {
   const trance = l.style === 'trance';
   const fx = EFFECTS.map(([n, h]) => {
     const e = (l.effects || []).find(x => x.name === n), inh = e && e.src !== 'line';
-    return `<button class="fx${e ? ' on' : ''}" data-fx="${n}" ${inh ? 'disabled' : ''}><span class="box2"></span><span style="display:flex;flex-direction:column"><b class="mono" style="font-size:13px">${n}</b><span style="font-size:12px;opacity:.85">${h}${inh ? ' · from ' + esc(e.src) : ''}</span></span></button>`;
+    return `<button class="fxbtn${e ? ' on' : ''}" data-fx="${n}" ${inh ? 'disabled' : ''}><span class="box2"></span><span style="display:flex;flex-direction:column"><b class="mono" style="font-size:13px">${n}</b><span style="font-size:12px;opacity:.85">${h}${inh ? ' · from ' + esc(e.src) : ''}</span></span></button>`;
   }).join('');
   const rows = SETTINGS.slice(0, moreSettings ? SETTINGS.length : 6).map(([n, hint, step]) => {
     const s = l.settings[n], own = l.own_settings[n];
@@ -934,11 +939,11 @@ function lineInspHTML(l) {
       <div class="styles">${styleBtns}</div><div class="hint">${STYLE_HINT[l.style] || ''}</div>
       ${trance ? `<div style="display:flex;align-items:center;gap:10px"><span class="hint">Depth</span><input type="range" min="0" max="1" step="0.05" value="${l.depth ?? 0.5}" data-input="depth" ${l.own_style === 'trance' ? '' : 'disabled title="set by the ramp: pick trance to set it here"'} aria-label="Trance depth"><span class="mono" style="font-size:12px;width:36px;text-align:right" id="depthVal">${fmtNum(l.depth ?? 0.5)}</span></div>` : ''}</div>
     <div class="field"><span class="lab">Effects</span>${fx}</div>
+    <div class="field"><span class="lab">Take</span><div style="display:flex;gap:8px;align-items:center"><div class="seg grow">${takeBtns}</div><button class="primary" data-act="preview">Preview</button></div>
+      <div class="hint" style="font-size:12px">Each take varies the timing and pitch a little; try a few and keep the best.</div>${pv}</div>
     <div class="field"><span class="lab">Settings <span style="text-transform:none;letter-spacing:0;font-weight:400">(empty = inherited)</span></span><div>${rows}</div>
       <button class="small" data-act="more" style="align-self:flex-start">${moreSettings ? 'Fewer settings' : 'More: volume, drift, floor, breath'}</button></div>
-    <div class="field"><span class="lab">Take</span><div style="display:flex;gap:8px;align-items:center"><div class="seg grow">${takeBtns}</div><button class="primary" data-act="preview">Preview</button></div>
-      <div class="hint" style="font-size:12px">A take is a different variation of the same line; try takes until one sounds right.</div>${pv}</div>
-    <div class="field"><span class="lab">How this line resolves</span><div class="chain">${layer('@defaults', '@defaults')}${layer('@cast', '@cast')}${layer('@ramp', '@ramp')}${layer('line', 'line')}</div></div>
+    <details><summary class="lab" style="cursor:pointer">Where the settings come from</summary><div class="chain" style="margin-top:6px">${layer('@defaults', '@defaults')}${layer('@cast', '@cast')}${layer('@ramp', '@ramp')}${layer('line', 'line')}</div></details>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${cast && cast.source ? `<button class="small" data-act="tune">Tune ${esc(cast.voice)} in Voices</button>` : ''}<span class="hint">${l.status === 'cached' ? 'Clip up to date.' : l.status === 'render' ? 'Needs a render.' : l.status === 'reuse' ? 'Its clip is there under another name.' : ''}</span></div>`;
 }
 
@@ -1262,7 +1267,7 @@ function setupStart() {
     try { SOURCES = (await api('/api/info')).sources; } catch (e) {}
     setupStart();
     if (INFO.script) await loadModel();
-    else { $('#tabScriptSub').textContent = 'no script open'; $('#folder').textContent = ''; }
+    else $('#tabScriptSub').textContent = 'no script open';
     if (INFO.script) { const want = view; view = 'visual'; await setView(want); }
     saveState();
     const want = location.hash.slice(1);

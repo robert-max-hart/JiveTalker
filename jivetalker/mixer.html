@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>JiveTalker Mixer</title>
 <style>
-/* Layout: a mixing desk. Two channel strips (timbre | delivery) side by side, the monitor (preview, takes,
-   variations, save) in a column beside them; strips stack on narrow screens. */
+/* Layout: a mixing desk. Load and Save in the top bar; two channel strips (timbre | delivery) side by side, the
+   monitor (preview, history, variations, recipe) in a column beside them; strips stack on narrow screens. */
 :root {
   --bg: #f3f4f7; --panel: #ffffff; --line: #d9dce4; --fg: #1d2230; --muted: #646b7d;
   --accent: #3a5bd9; --accent-soft: #e3e9fb; --warn: #b4521e; --ok: #2f7d4f;
@@ -35,7 +35,7 @@ button { background: var(--panel); border: 1px solid var(--line); border-radius:
 button:hover { border-color: var(--accent) }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); font-weight: 600 }
 button.small { padding: 2px 8px; font-size: 12px }
-button:disabled { opacity: 0.5; cursor: progress }
+button:disabled { opacity: 0.5; cursor: default }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
 select, input[type=text], input[type=number], textarea { background: var(--bg); border: 1px solid var(--line);
   border-radius: 6px; padding: 5px 8px; min-width: 0 }
@@ -43,6 +43,7 @@ textarea { width: 100%; resize: vertical }
 input[type=range] { width: 100%; accent-color: var(--accent); min-width: 0 }
 .top { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px }
 .top .grow { flex: 1 }
+#saveMsg:not(:empty) { margin: -6px 0 14px }
 .status { color: var(--muted); font-size: 13px }
 .status.err { color: var(--warn) }
 .desk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px; align-items: start }
@@ -103,10 +104,16 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
   <div class="inline">
     <label class="lab" for="loadSel">Start from</label>
     <select id="loadSel"></select>
-    <button id="loadBtn">Load</button>
+    <button id="loadBtn" title="Replace the voice below with this one">Load</button>
   </div>
   <div class="grow status" id="status">Loading…</div>
+  <div class="inline">
+    <label class="lab" for="saveName">Save as</label>
+    <input type="text" id="saveName" placeholder="a name, e.g. narrator_v2" style="width:13em">
+    <button class="primary" id="saveBtn">Save voice</button>
+  </div>
 </div>
+<div id="saveMsg"></div>
 
 <div class="desk">
   <section class="strip timbre" id="strip-timbre"></section>
@@ -120,8 +127,8 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
         <select id="lineSel"></select>
       </div>
       <div class="field">
-        <label for="text">Text <span class="hint">(word marks work: [eyes](+))</span></label>
-        <textarea id="text" rows="2">Now... Mara... close your eyes. That's right, just let them rest.</textarea>
+        <label for="text">Text <span class="hint">(word marks work: [whole](+))</span></label>
+        <textarea id="text" rows="2">Hello there. This is how I sound when I read a [whole](+) line.</textarea>
       </div>
       <div class="inline">
         <div class="field grow"><label for="dir">Direction</label><input id="dir" type="text" placeholder="e.g. trance 0.6, internal"></div>
@@ -138,17 +145,17 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
       </div>
       <audio id="player" controls style="width:100%"></audio>
       <div class="warnline" id="warn"></div>
-      <h3>Takes</h3>
-      <div class="takes" id="takes"><div class="hint">Every preview lands here. Click one to hear it again, or restore its settings.</div></div>
+      <h3>History</h3>
+      <div class="takes" id="takes"><div class="hint">Every preview lands here: ▶ plays it again, Restore brings back the voice it was made with.</div></div>
     </section>
 
     <section class="box">
       <h2>Variations</h2>
-      <div class="hint">Nudges the current voice in random directions along the principal axes. Listen, keep the best, repeat with a smaller step.</div>
+      <div class="hint">Six random nudges of the current voice. Play them, Keep the best, and repeat with a smaller "how different" to home in.</div>
       <div class="inline">
         <label class="lab"><input type="checkbox" id="vT" checked> timbre</label>
         <label class="lab"><input type="checkbox" id="vD"> delivery</label>
-        <label class="lab" for="vStep">step</label>
+        <label class="lab" for="vStep" title="How far each variation moves from the current voice">how different</label>
         <input type="range" id="vStep" min="0.1" max="1.5" step="0.05" value="0.5" style="width:8em">
         <span id="vStepVal" class="hint">0.50</span>
       </div>
@@ -157,23 +164,18 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 4px;
     </section>
 
     <section class="box">
-      <h2>Save</h2>
-      <div class="hint" id="saveDir"></div>
-      <div class="inline">
-        <input type="text" id="saveName" class="grow" placeholder="name, e.g. mara_v2">
-        <button class="primary" id="saveBtn">Save .pt</button>
-      </div>
-      <div id="saveMsg"></div>
       <details>
-        <summary>Recipe</summary>
-        <pre class="recipe" id="recipeView"></pre>
+        <summary>Recipe: the blend and adjustments Save writes next to the voice</summary>
+        <pre class="recipe" id="recipeView" style="margin-top:8px"></pre>
       </details>
+      <div class="hint" id="saveDir"></div>
     </section>
   </div>
 </div>
 
 <script>
 const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const EMBEDDED = window.parent !== window;
 if (EMBEDDED) document.documentElement.classList.add('embed');
 function tellParent(msg) { if (EMBEDDED) window.parent.postMessage(Object.assign({jivetalker: msg.type}, msg), location.origin); }
@@ -202,6 +204,7 @@ function allSources() {
 function fillSourceSelect(sel, keep) {
   const v = keep ? sel.value : null;
   sel.innerHTML = '';
+  if (sel.dataset.placeholder) sel.append(new Option(sel.dataset.placeholder, ''));
   for (const g of ['Your voices', 'Stock']) {
     const og = document.createElement('optgroup'); og.label = g;
     for (const s of allSources().filter(s => s.group === g)) og.append(new Option(s.label, s.id));
@@ -219,14 +222,15 @@ function buildStrip(half) {
       <span class="hint">${half === 'timbre' ? 'what the voice sounds like' : 'intonation, pacing, energy'}</span></div>
     <h3>Blend</h3>
     <div class="mix"></div>
-    <div class="addrow"><select id="add-${half}"></select><button class="small" data-add>Add</button></div>
+    <div class="addrow"><select id="add-${half}" data-placeholder="+ Add a voice to the blend…" aria-label="Add a voice to the ${half} blend"></select></div>
     <div class="btnrow"><button class="small" data-copy>Copy blend from ${other}</button></div>
-    <h3>Adjust <span class="hint" style="text-transform:none;letter-spacing:0">(± in stock-voice standard deviations; mark = where the voice sits now)</span></h3>
+    <h3>Adjust <span class="hint" style="text-transform:none;letter-spacing:0">(the tick marks where the voice sits now; click a number to reset it)</span></h3>
     <div class="axes"></div>
     <div class="btnrow"><button class="small" data-reset>Reset adjustments</button></div>`;
   fillSourceSelect(el.querySelector('select'));
-  el.querySelector('[data-add]').onclick = () => {
-    const n = el.querySelector('select').value;
+  el.querySelector('select').onchange = e => {
+    const n = e.target.value; e.target.value = '';
+    if (!n) return;
     if (!(n in recipe[half].mix)) recipe[half].mix[n] = Object.keys(recipe[half].mix).length ? 0.25 : 1;
     changed();
   };
@@ -347,7 +351,7 @@ function addTake(url, label, r, res) {
   row.querySelector('.what').title = label + '\n' + $('#text').value + ($('#dir').value ? '  {' + $('#dir').value + '}' : '');
   const [play, restore] = row.querySelectorAll('button');
   play.onclick = () => { const p = $('#player'); p.src = url; p.play().catch(() => {}); };
-  restore.onclick = () => { recipe = clone(r); changed(); status(`Restored take ${label}`); };
+  restore.onclick = () => { recipe = clone(r); changed(); status(`Restored ${label}`); };
   box.prepend(row);
   while (box.children.length > 30) box.lastChild.remove();
 }
@@ -397,6 +401,7 @@ $('#loadBtn').onclick = () => busy($('#loadBtn'), async () => {
   const res = await api('/api/load', {source: n});
   recipe = res.recipe; for (const h of HALVES) recipe[h].axes = recipe[h].axes || {};
   if (info.sources.user[n]) $('#saveName').value = n;
+  $('#cmpSel').value = n;
   changed(); status(`Loaded ${n}: ${res.how}.`);
 });
 async function save(overwrite) {
@@ -409,12 +414,16 @@ async function save(overwrite) {
     $('#ovNo').onclick = () => msg.innerHTML = '';
     return;
   }
-  msg.innerHTML = `<div class="hint" style="color:var(--ok)">Saved ${res.path} and its recipe${res.backup ? `; old file kept as ${res.backup}` : ''}.</div>`;
+  const nm = $('#saveName').value.trim().replace(/\.pt$/, '');
+  msg.innerHTML = `<div class="hint" style="color:var(--ok)">Saved ${esc(res.path)} and its recipe${res.backup ? `; the old file is kept as ${esc(res.backup)}` : ''}. To use it, cast a speaker to it: <code>@cast Name = ${esc(nm)}</code></div>`;
+  status(`Saved ${nm}.`);
   info.sources = res.sources;
   tellParent({type: 'saved', name: $('#saveName').value.trim().replace(/\.pt$/, '')});
   for (const s of ['#loadSel', '#cmpSel', '#add-timbre', '#add-delivery']) fillSourceSelect($(s), true);
 }
+$('#saveName').addEventListener('keydown', e => { if (e.key === 'Enter') $('#saveBtn').click(); });
 $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
+  if (!$('#saveName').value.trim()) { $('#saveName').focus(); throw new Error('Give the voice a name first.'); }
   if (!valid(recipe)) throw new Error('Set up a blend first.');
   await save(false);
 });
@@ -425,7 +434,9 @@ $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
     info = await api('/api/info');
     fillSourceSelect($('#loadSel')); fillSourceSelect($('#cmpSel'));
     for (const h of HALVES) buildStrip(h);
-    $('#saveDir').textContent = info.save_dir ? 'Saves to ' + info.save_dir : 'No save folder (start with --voices-dir or --save-dir).';
+    $('#saveDir').textContent = info.save_dir ? 'Save writes <name>.pt and <name>.recipe.json to ' + info.save_dir : 'No save folder: start with --voices-dir or --save-dir to save voices.';
+    if (!info.save_dir) { $('#saveBtn').disabled = true; $('#saveBtn').title = 'No save folder: start with --voices-dir or --save-dir'; }
+    else $('#saveBtn').title = 'Saves to ' + info.save_dir;
     if (info.lines.length) {
       $('#lineField').hidden = false;
       const sel = $('#lineSel'); sel.append(new Option('(type your own)', ''));
@@ -434,7 +445,10 @@ $('#saveBtn').onclick = () => busy($('#saveBtn'), async () => {
     }
     const first = Object.keys(info.sources.user)[0];
     if (first) { $('#loadSel').value = first; $('#cmpSel').value = first; $('#loadBtn').click(); }
-    else { recipe.timbre.mix.af_heart = 1; recipe.delivery.mix.af_heart = 1; changed(); status('Ready.'); }
+    else {
+      recipe.timbre.mix.af_heart = 1; recipe.delivery.mix.af_heart = 1;
+      $('#loadSel').value = $('#cmpSel').value = 'af_heart'; changed(); status('Started from af_heart.');
+    }
     // the Script tab can ask for a voice (and a line to try it on)
     window.addEventListener('message', e => {
       const d = e.data;
