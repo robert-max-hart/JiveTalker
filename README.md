@@ -69,10 +69,11 @@ syntax:
 - **Visual** shows every line with its speaker, its direction and its marks. Marked words show how they'll
   sound: bold for stress, spaced out for drawn out, faded for de-stress, and a gap label for a pause. Settings
   a line inherits from `@cast`, `@defaults` or a ramp are shown with dashed borders.
-- **Click a word** (Shift-click to take in more words) and the inspector sets its stress, draw-out, pause,
+- **Click a word** (Shift-click to take in more words) and the inspector's **Word** tab sets its stress, draw-out, shortening, pause,
   pronunciation or replacement words. Its pitch has a curve you shape by dragging the points. From the keyboard:
-  `+` `-` stress, `~` draw out, `|` pause, `^` pitch shapes, `0` clear, arrow keys to move, Space to play.
-- **The line** part of the inspector sets the style, effects, settings and take. It shows where each value
+  `+` `-` stress, `~` draw out, `<` shorten, `|` pause, `^` pitch shapes, `0` clear, arrow keys to move, Space
+  to play, `p` to render a fresh preview.
+- The inspector's **Line** tab sets the style, effects, settings and take. It shows where each value
   comes from (`@defaults`, `@cast`, `@ramp`, the line itself, or the style) and what the line ends up with.
 - **Play** plays the line's clip if it is up to date, or renders a preview. **Render** renders the lines that
   changed into the clip folder (`--out`, default `voice/` next to the script), like `jivetalker render`.
@@ -139,9 +140,12 @@ band, phonemes, per-note results) for scripts and AI agents; `--guide` also writ
 ## Notes
 
 - Voices are Kokoro voice packs (`.pt`, shape [510, 1, 256]) or stock names such as `af_nicole`.
-- Output is Ogg Opus by default, with an automatic fallback to `.wav`; `--format wav|flac` is also available.
-- Tested on Linux. Windows is intended to work but not yet tested: first check that `jivetalker preview`
-  writes an `.ogg` (not a `.wav` fallback with a warning).
+- Output is Ogg Opus (`.ogg`) by default. Many game engines can't play Opus: for those, put `@format vorbis` in
+  the script (Ogg Vorbis, also `.ogg`), or use `--format vorbis|wav|flac`
+  ([Audio formats](VOICE_SCRIPT.md#audio-formats)). Ogg falls back to `.wav`, with a warning, on a machine that
+  can't write it.
+- Tested on Linux and Windows. `jivetalker.sh` / `jivetalker.bat` start the editor from the venv (they look in
+  `$JIVETALKER_VENV`, then `.venv` next to them, then `~/venv/kokoro`).
 - Recipes written before the rename (marked `voicegen_recipe`) still load.
 
 Layout: `engine.py` (the model with duration/pitch editing), `styles.py` (styles and how directions

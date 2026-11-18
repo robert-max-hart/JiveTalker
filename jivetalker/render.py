@@ -6,6 +6,7 @@ loudness), the text with its marks, and the seed. Files are named `<id>_<key10>.
 finds its old clip by key and is renamed instead of re-rendered.
 
 manifest.json:  {"jivetalker": 1, "format": "ogg", "clips": {id: {"file", "key", "speaker", "text", "seconds"}}}
+"format" is ogg (Ogg Opus), vorbis (Ogg Vorbis, also .ogg files), wav or flac.
 """
 import fnmatch
 import hashlib
@@ -17,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import ENGINE_VERSION, lang as languages, marks as marks_mod, styles
-from .common import STOCK_PREFIXES
+from .common import FORMATS, STOCK_PREFIXES, format_name, resolve_format
 
 MANIFEST = 'manifest.json'
 CLIP_RE = re.compile(r'^(.+)_([0-9a-f]{10})\.(ogg|wav|flac)$')
@@ -25,10 +26,21 @@ RENDER_FACTOR = 0.75            # CPU seconds per second of audio (measured on t
 MODEL_LOAD = 10.0
 
 
-def clip_name(line_id, key, ext):
+def file_key(key, fmt):
+    """the 10 characters of the key in a clip's file name. Opus and Vorbis clips are both .ogg, so a Vorbis
+    clip's name takes a key of its own: a folder switched from one to the other re-renders instead of keeping
+    the other codec's files."""
+    if fmt == 'vorbis':
+        return hashlib.sha256((key + ':vorbis').encode('ascii')).hexdigest()[:10]
+    return key[:10]
+
+
+def clip_name(line_id, key, fmt):
+    """fmt: an audio format ('ogg', 'vorbis', 'wav', 'flac')"""
+    fmt = format_name(fmt)
     safe = re.sub(r'[^A-Za-z0-9_-]+', '_', line_id).strip('_') or 'line'
     safe = re.sub(r'\d+', lambda m: m.group(0).zfill(3), safe)
-    return f'{safe}_{key[:10]}.{ext}'
+    return f'{safe}_{file_key(key, fmt)}.{FORMATS[fmt][2]}'
 
 
 _file_hashes = {}
@@ -154,11 +166,12 @@ def make_plan(jobs, out, fmt):
     """[(job, key, action, source file)]: action is 'cached' (its clip is there), 'reuse' (a clip with the same
     key is there under another name) or 'render'"""
     out = Path(out)
+    fmt = resolve_format(fmt, warn=None)
     on_disk = {}
     if out.exists():
         for f in out.iterdir():
             m = CLIP_RE.match(f.name)
-            if m and m.group(3) == fmt:
+            if m and m.group(3) == FORMATS[fmt][2]:
                 on_disk.setdefault(m.group(2), f)
     plan = []
     for j in jobs:
@@ -166,8 +179,8 @@ def make_plan(jobs, out, fmt):
         want = clip_name(j.id, key, fmt)
         if (out / want).exists():
             plan.append((j, key, 'cached', out / want))
-        elif key[:10] in on_disk:
-            plan.append((j, key, 'reuse', on_disk[key[:10]]))
+        elif file_key(key, fmt) in on_disk:
+            plan.append((j, key, 'reuse', on_disk[file_key(key, fmt)]))
         else:
             plan.append((j, key, 'render', None))
     return plan
@@ -176,7 +189,6 @@ def make_plan(jobs, out, fmt):
 def render(jobs, out, fmt='ogg', dry_run=False, prune=False, only=None, model_dir=None, log=print, engine=None):
     """Render `jobs` (from Script.jobs) into folder `out`. Returns a summary dict.
     Safe to interrupt: the manifest is saved after every clip. `engine`: an Engine to use instead of loading one."""
-    from .engine import resolve_format
     out = Path(out)
     fmt = resolve_format(fmt, warn=log)
     manifest = load_manifest(out) if out.exists() else {'jivetalker': 1, 'clips': {}}

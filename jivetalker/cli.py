@@ -16,6 +16,8 @@ import sys
 import time
 from pathlib import Path
 
+from .common import FORMAT_CHOICES
+
 
 def report(errors, label):
     for n, msg in errors:
@@ -196,7 +198,7 @@ def cmd_render(a):
         if not a.keep_going:
             sys.exit('jivetalker: nothing rendered (use --keep-going to render the good lines anyway)')
     out = Path(a.out) if a.out else Path(a.script).parent / 'voice'
-    s = render(jobs, out, a.format, a.dry_run, a.prune, a.only, a.model_dir)
+    s = render(jobs, out, a.format or sc.audio_format or 'ogg', a.dry_run, a.prune, a.only, a.model_dir)
     print_summary(s, dry_run=a.dry_run)
     print(f'clips: {out}')
 
@@ -215,8 +217,8 @@ def start_toolkit(a, script, start):
             dirs.insert(0, str(own))
     m = Mixer(dirs, a.save_dir or (dirs[0] if dirs else None), script, a.model_dir)
     if script:
-        doc = ScriptDoc(script, None, getattr(a, 'out', None), getattr(a, 'format', None) or 'ogg', m.source_for)
-    serve(Toolkit(m, doc, start, Path.cwd(), getattr(a, 'format', None) or 'ogg', bool(a.save_dir)),
+        doc = ScriptDoc(script, None, getattr(a, 'out', None), getattr(a, 'format', None), m.source_for)
+    serve(Toolkit(m, doc, start, Path.cwd(), getattr(a, 'format', None), bool(a.save_dir)),
           a.port, not a.no_browser)
 
 
@@ -275,8 +277,9 @@ def main(argv=None):
     pv.add_argument('--line', help='ID of the line in --script')
     pv.add_argument('--seed', type=int, default=0)
     pv.add_argument('-o', '--output', default='preview.ogg')
-    pv.add_argument('--format', choices=('ogg', 'wav', 'flac'),
-                    help='audio format (default: from -o; ogg falls back to wav if Opus is unavailable)')
+    pv.add_argument('--format', choices=FORMAT_CHOICES,
+                    help='audio format: ogg (Ogg Opus), vorbis (Ogg Vorbis), wav, flac (default: from -o, where .ogg '
+                         'is Opus; Ogg falls back to wav if this machine can\'t write it)')
     pv.add_argument('-v', '--verbose', action='store_true')
     pv.set_defaults(func=cmd_preview)
     ck = sub.add_parser('check', help='parse a voice script and report problems')
@@ -287,7 +290,7 @@ def main(argv=None):
     rd.add_argument('script')
     rd.add_argument('--out', help='clip folder (default: voice/ next to the script)')
     rd.add_argument('--voices-dir', help='overrides the script\'s @voices')
-    rd.add_argument('--format', default='ogg', choices=('ogg', 'wav', 'flac'))
+    rd.add_argument('--format', choices=FORMAT_CHOICES, help='audio format: ogg (Ogg Opus), vorbis (Ogg Vorbis, for game engines that need it), wav, flac (default: the script\'s @format, else ogg)')
     rd.add_argument('--only', action='append', help='IDs or patterns, e.g. "c1.e1*" (repeatable, comma-separated)')
     rd.add_argument('--dry-run', action='store_true', help='show what would be rendered and how long it would take')
     rd.add_argument('--prune', action='store_true', help='delete clips no line uses any more')
@@ -308,7 +311,7 @@ def main(argv=None):
                                                           'the script\'s @voices folder is always included)')
     ed.add_argument('--save-dir', help='where the mixer saves (default: the script\'s @voices folder)')
     ed.add_argument('--out', help='clip folder for Render (default: voice/ next to the script)')
-    ed.add_argument('--format', default='ogg', choices=('ogg', 'wav', 'flac'))
+    ed.add_argument('--format', choices=FORMAT_CHOICES, help='audio format: ogg (Ogg Opus), vorbis (Ogg Vorbis, for game engines that need it), wav, flac for Render (default: the script\'s @format, else ogg)')
     ed.add_argument('--port', type=int, default=8765)
     ed.add_argument('--no-browser', action='store_true')
     ed.set_defaults(func=cmd_edit)
@@ -339,7 +342,7 @@ def main(argv=None):
     sg.add_argument('--seed', type=int, default=0)
     sg.add_argument('--guide', action='store_true', help='also write the melody as tones, alone and mixed')
     sg.add_argument('-o', '--output', default='song.wav')
-    sg.add_argument('--format', choices=('ogg', 'wav', 'flac'))
+    sg.add_argument('--format', choices=FORMAT_CHOICES, help='audio format: ogg (Ogg Opus), vorbis (Ogg Vorbis, for game engines that need it), wav, flac')
     sg.add_argument('-v', '--verbose', action='store_true')
     sg.set_defaults(func=cmd_sing)
     a = p.parse_args(argv)

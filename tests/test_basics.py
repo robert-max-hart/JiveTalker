@@ -130,6 +130,19 @@ class Files(unittest.TestCase):
         job = {j.id: j for j in parse().jobs()[0]}['c1.e10']
         self.assertEqual(render.cache_key(job), GOLDEN_KEY)
 
+    def test_audio_formats(self):
+        sc = Script.parse(SCRIPT.replace('@defaults', '@format Vorbis\n@defaults', 1))
+        self.assertEqual((sc.audio_format, sc.errors), ('vorbis', []))
+        self.assertEqual(Script.parse(SCRIPT).audio_format, None)             # no @format: Ogg Opus
+        self.assertTrue(Script.parse('@format mp3\n').errors)
+        key = 'ab' * 32
+        self.assertEqual(render.clip_name('c1.e1', key, 'ogg'), 'c001_e001_ababababab.ogg')    # names unchanged
+        self.assertEqual(render.clip_name('c1.e1', key, 'opus'), 'c001_e001_ababababab.ogg')
+        vorbis = render.clip_name('c1.e1', key, 'vorbis')
+        self.assertTrue(vorbis.endswith('.ogg') and vorbis != render.clip_name('c1.e1', key, 'ogg'))
+        with self.assertRaises(ValueError):
+            render.clip_name('c1.e1', key, 'mp3')
+
     def test_renamed_style_keeps_its_clips(self):
         # 'monotone' was called 'deep': scripts that say deep still read, and both names give the same clip
         jobs = {j.id: j for j in parse().jobs()[0]}

@@ -79,14 +79,24 @@ def _num(v):
 class ScriptDoc:
     """A voice script file being edited: reads it, describes it for the page, applies edits."""
 
-    def __init__(self, path, voices_dir=None, out=None, fmt='ogg', source_for=None):
+    def __init__(self, path, voices_dir=None, out=None, fmt=None, source_for=None):
+        """fmt: the audio format for Render; None follows the script's @format (default ogg)"""
         self.path = Path(path).resolve()
         self.voices_override = voices_dir
         self.out = Path(out).resolve() if out else self.path.parent / 'voice'
-        self.fmt = fmt
+        self.fmt_override = fmt
         self.source_for = source_for or (lambda p: None)     # voice path -> mixer name
         self.lock = threading.Lock()
         self.backed_up = False
+
+    @property
+    def fmt(self):
+        if self.fmt_override:
+            return self.fmt_override
+        try:
+            return self.script().audio_format or 'ogg'
+        except OSError:
+            return 'ogg'
 
     # ------------------------------------------------------------------ the file
     def read(self):
@@ -209,6 +219,7 @@ class ScriptDoc:
         sc = self.script(text)
         jobs, errors = sc.jobs(self.voices_override)
         physical = text.splitlines()
+        fmt = render_mod.resolve_format(self.fmt_override or sc.audio_format or 'ogg', warn=None)
 
         def parse(s, where):
             try:
@@ -225,7 +236,7 @@ class ScriptDoc:
         for j in jobs:
             by_id.setdefault(j.id, j)
         plan = {j.id: (key, action, src) for j, key, action, src in
-                render_mod.make_plan(list(by_id.values()), self.out, self.fmt)} if by_id else {}
+                render_mod.make_plan(list(by_id.values()), self.out, fmt)} if by_id else {}
         line_errors = {}
         for n, msg in errors:
             line_errors.setdefault(n, []).append(msg)
@@ -233,7 +244,7 @@ class ScriptDoc:
         items, line_n = [], 0
         for kind, x in sc.items:
             if kind == 'line':
-                items.append(self._line(x, sc, physical, defaults, cast_dirs, ramps, by_id, plan, line_errors))
+                items.append(self._line(x, sc, physical, defaults, cast_dirs, ramps, by_id, plan, line_errors, fmt))
                 line_n += 1
             elif kind == 'section':
                 items.append({'kind': 'section', 'title': x})
@@ -265,7 +276,7 @@ class ScriptDoc:
             n == it.get('lineno') for it in items if it['kind'] == 'line')]
         return {
             'version': version(text), 'text': text, 'path': str(self.path), 'name': self.path.name,
-            'folder': self.path.parent.name, 'out': str(self.out), 'out_rel': self._rel(self.out), 'format': self.fmt,
+            'folder': self.path.parent.name, 'out': str(self.out), 'out_rel': self._rel(self.out), 'format': fmt,
             'defaults': sc.defaults, 'pronounce': sc.pronounce, 'voices': str(sc.voices_dir(self.voices_override)),
             'cast': cast, 'items': items, 'problems': problems,
             'summary': {'lines': len(sc.lines), 'ready': len(jobs), 'errors': len(errors),
@@ -281,7 +292,7 @@ class ScriptDoc:
         except ValueError:                  # another drive (Windows)
             return str(p)
 
-    def _line(self, ln, sc, physical, defaults, cast_dirs, ramps, by_id, plan, line_errors):
+    def _line(self, ln, sc, physical, defaults, cast_dirs, ramps, by_id, plan, line_errors, fmt):
         who = sc.aliases.get(ln.speaker)
         out = {'kind': 'line', 'lineno': ln.lineno, 'raw': physical[ln.lineno - 1], 'id': ln.id, 'flags': ln.flags,
                'speaker': ln.speaker, 'who': who, 'direction': ln.direction, 'text': ln.text,
@@ -343,7 +354,7 @@ class ScriptDoc:
         if job and not out['errors'] and job.lineno == ln.lineno:
             key, action, src = plan[ln.id]
             out.update({'status': action, 'key': key, 'resolved': str(job.direction), 'spoken': job.text,
-                        'clip': render_mod.clip_name(ln.id, key, self.fmt) if action == 'cached' else None})
+                        'clip': render_mod.clip_name(ln.id, key, fmt) if action == 'cached' else None})
         return out
 
 
@@ -432,14 +443,14 @@ class Stopped(KeyboardInterrupt):
 
 
 class Toolkit:
-    def __init__(self, mixer, doc=None, start='script', home=None, fmt='ogg', save_fixed=False):
+    def __init__(self, mixer, doc=None, start='script', home=None, fmt=None, save_fixed=False):
         """home: the folder new and opened scripts' paths are relative to; save_fixed: the mixer's save folder
         was chosen on the command line (else it follows the open script's @voices folder)"""
         self.mixer = mixer
         self.doc = doc
         self.start = start
         self.home = Path(home or '.').resolve()
-        self.fmt = doc.fmt if doc else fmt
+        self.fmt = fmt                  # --format given on the command line, else None (each script's @format)
         self.save_fixed = save_fixed
         self.eng = mixer.eng
         self.lock = mixer.lock

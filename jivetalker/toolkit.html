@@ -1124,7 +1124,7 @@ const DIR_ITEMS = [...STYLE_NAMES.map(n => [n === 'trance' ? 'trance 0.6' : n, S
   ...SETTINGS.map(([n, h]) => [n + ' ', h]), ['take ', 'a different variation of the line'],
   ['lang ja', 'the language spoken: en (default) or ja']];
 const AT_ITEMS = [['@cast ', 'Name = voice | aliases {direction}'], ['@defaults ', 'a direction for every line'], ['@voices ', 'the folder voice names are looked up in'],
-  ['@pronounce ', 'Word = /ipa/'], ['@ramp trance 0.2 -> 1.0', 'change trance or a setting across one speaker\'s lines'], ['@end', 'ends a ramp']];
+  ['@pronounce ', 'Word = /ipa/'], ['@format vorbis', 'the clips\' audio format: ogg (Opus, the default), vorbis, wav, flac'], ['@ramp trance 0.2 -> 1.0', 'change trance or a setting across one speaker\'s lines'], ['@end', 'ends a ramp']];
 let comp = null;
 function complete() {
   const pos = ta.selectionStart; if (pos !== ta.selectionEnd) return closeComplete();

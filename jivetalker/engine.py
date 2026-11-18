@@ -23,7 +23,7 @@ import numpy as np
 import scipy.ndimage as nd
 
 from . import dsp, lang as languages, marks as marks_mod, styles
-from .common import STOCK_PREFIXES, make_seed  # noqa: F401  (re-exported)
+from .common import FORMATS, STOCK_PREFIXES, codec_available, make_seed, resolve_format  # noqa: F401  (re-exported)
 from .lang import Token  # noqa: F401  (re-exported)
 
 KOKORO_VERSION = '0.9.4'
@@ -590,50 +590,30 @@ class Engine:
                         phonemes=self.phoneme_string(tokens))
 
 
-FORMATS = {'ogg': ('OGG', 'OPUS'), 'wav': ('WAV', 'PCM_16'), 'flac': ('FLAC', 'PCM_16')}
-
-
-def opus_available():
-    import soundfile as sf
-    try:
-        return 'OPUS' in sf.available_subtypes('OGG')
-    except Exception:
-        return False
-
-
-def resolve_format(fmt='ogg', warn=print):
-    """'ogg' (Opus, small), 'wav' (uncompressed) or 'flac' (lossless). 'ogg' falls back to 'wav' when this
-    machine's libsndfile can't write Opus."""
-    fmt = fmt.lower().lstrip('.')
-    if fmt not in FORMATS:
-        raise ValueError(f'unknown audio format "{fmt}": use ogg, wav or flac')
-    if fmt == 'ogg' and not opus_available():
-        if warn:
-            warn('jivetalker: this soundfile/libsndfile cannot write Ogg Opus; writing .wav instead')
-        return 'wav'
-    return fmt
+opus_available = lambda: codec_available('ogg')     # noqa: E731  (older name)
 
 
 def write(path, audio, fmt=None, warn=print):
     """Write a clip; returns the path actually written (its extension may change).
-    fmt: 'ogg' | 'wav' | 'flac'; default = the path's extension. If Ogg Opus fails, the clip is written as
-    .wav next to it instead."""
+    fmt: 'ogg' (Opus) | 'vorbis' | 'wav' | 'flac'; default = the path's extension (.ogg = Opus). If Ogg fails,
+    the clip is written as .wav next to it instead."""
     import soundfile as sf
     path = Path(path)
     fmt = resolve_format(fmt or path.suffix or 'ogg', warn)
-    path = path.with_suffix('.' + fmt)
+    container, subtype, ext = FORMATS[fmt]
+    path = path.with_suffix('.' + ext)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        sf.write(str(path), audio, dsp.SR, format=FORMATS[fmt][0], subtype=FORMATS[fmt][1])
+        sf.write(str(path), audio, dsp.SR, format=container, subtype=subtype)
     except Exception as e:
-        if fmt != 'ogg':
+        if container != 'OGG':
             raise
         try:
             path.unlink(missing_ok=True)
         except OSError:
             pass
         if warn:
-            warn(f'jivetalker: writing Ogg Opus failed ({e}); writing .wav instead')
+            warn(f'jivetalker: writing Ogg {subtype.title()} failed ({e}); writing .wav instead')
         path = path.with_suffix('.wav')
         sf.write(str(path), audio, dsp.SR, format='WAV', subtype='PCM_16')
     return path

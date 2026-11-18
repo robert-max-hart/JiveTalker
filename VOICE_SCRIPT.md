@@ -47,6 +47,7 @@ c1.e174  Doctor Lee {pause 2.2}: Now... Mara... close your [eyes](+~)...
 | `@cast Name = voice` | which voice a speaker uses: a name in `@voices` (`mara` → `mara.pt`), a path to a `.pt`, or a Kokoro stock voice (`af_nicole`) |
 | `@cast Name = voice {direction}` | a default direction for everything this speaker says |
 | `@defaults direction` | a default direction for every line |
+| `@format vorbis` | the clips' audio format: `ogg` (Ogg Opus, the default), `vorbis`, `wav` or `flac` (see [Audio formats](#audio-formats)) |
 | `@pronounce Mara = /mˈɑɹə/` | say this word this way in every line, unless that occurrence already has a mark (a mark holds either a stress or a respelling). Possessives ("Mara’s") aren't touched |
 
 Other names for the same speaker go after the voice, separated by bars, so lines spoken by `???` use
@@ -139,7 +140,7 @@ Each line is checked for words the phonemizer couldn't read; respell those with 
 
 A ramp gradually changes a style or setting across the lines of one speaker: by default the first line's
 speaker, or name one with `@ramp trance 0.2 -> 1.0 for Doctor Lee`. Other speakers' lines in between
-are untouched. Ramps work on `trance` or any setting, for example `@ramp speed 1.0 -> 0.8`. A line's own
+are untouched. Ramps work on `trance` or any number setting (not `lang` or `sing`), for example `@ramp speed 1.0 -> 0.8`. A line's own
 style wins over the ramp, but a line with only settings (such as `{pause 2.2}`) keeps the ramp's style.
 
 ## Languages
@@ -202,5 +203,16 @@ and the variation seed. Renumbered lines reuse their old clips, and replacing a 
 voice's lines. `--dry-run` shows what would be rendered and roughly how long it would take. Ctrl-C is safe:
 finished clips are kept, and the next run continues. `--prune` deletes clips no line uses any more.
 
-`--format wav` (or `flac`) writes uncompressed audio. Ogg Opus is the default and falls back to `.wav` on
-machines that can't write it.
+### Audio formats
+
+| Format | Files | Notes |
+|---|---|---|
+| `ogg` (or `opus`) | `.ogg`, Opus codec | the default: small, and web browsers play it. Many game engines and audio tools **can't** read Opus in an `.ogg` |
+| `vorbis` | `.ogg`, Vorbis codec | for engines and tools that need Ogg Vorbis. A little larger than Opus |
+| `wav` | `.wav` | uncompressed: plays everywhere, largest |
+| `flac` | `.flac` | lossless, about half the size of `.wav` |
+
+Set it once in the script with `@format vorbis`; `--format` on the command line wins over it. Opus and Vorbis
+clips are both `.ogg` but get different file names, so switching re-renders the clips instead of mixing codecs
+(`--prune` then removes the old ones). `manifest.json` records the format. If this machine can't write Ogg, clips
+fall back to `.wav` with a warning.

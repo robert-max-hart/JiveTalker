@@ -23,7 +23,7 @@ Kokoro TTS voice-line generator with markup. Read README.md (install, layout, mi
   cache key leaves the language out while it is English, so existing clips keep their keys.
 - **Seeds** use hashlib, never `hash()` (it varies per process).
 - **Stay generic and cross-platform**: no game- or story-specific names, paths or defaults; Linux and
-  Windows (use `pathlib`, no shell-outs). Ogg Opus via soundfile, with a `.wav` fallback.
+  Windows (use `pathlib`, no shell-outs). Ogg Opus via soundfile by default (`@format vorbis` / `--format vorbis` for engines that can't read Opus), with a `.wav` fallback.
 - **Sound is judged by ear, by the user.** Tuning constants (whisper, `dsp.MUFFLED` 700 Hz, stress levels)
   were set in listening rounds; keep them unless asked. For sound changes, render variants and ask the user
   to listen; never call a sound good yourself. Headless browsers here can't play audio, so the mixer can

@@ -6,6 +6,7 @@
     @cast Doctor Lee = lee | ???               ... | aliases
     @cast Mara (thought) = mara {internal}     ... {a default direction for this speaker}
     @defaults speed 0.95, human 1.0            direction for every line
+    @format vorbis                             the clips' audio format: ogg (Opus, default), vorbis, wav, flac
     @pronounce Mara = /mˈɑɹə/                   say this word this way wherever it isn't marked otherwise
 
     == Chapter 1 ==                            a section heading (for reading only)
@@ -25,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import marks as marks_mod, styles
-from .common import STOCK_PREFIXES, make_seed
+from .common import STOCK_PREFIXES, format_name, make_seed
 
 LINE_RE = re.compile(r'^(\S+)\s+((?:![\w-]+\s+)*)([^{:]+?)\s*(?:\{([^}]*)\})?\s*:\s?(.*)$')
 RAMP_RE = re.compile(r'^@ramp\s+(\w+)\s+(-?[\d.]+)\s*->\s*(-?[\d.]+)(?:\s+for\s+(.+))?$')
@@ -92,6 +93,7 @@ class Script:
         self.aliases = {}
         self.defaults = ''
         self.voices = None
+        self.audio_format = None    # @format: the clips' audio format (None: the default, Ogg Opus)
         self.pronounce = {}     # word -> '/ipa/'
         self.errors = []        # (lineno, message)
 
@@ -158,6 +160,11 @@ class Script:
         rest = rest.strip()
         if word == '@voices':
             self.voices = rest
+        elif word == '@format':
+            try:
+                self.audio_format = format_name(rest)
+            except ValueError as e:
+                self.errors.append((n, str(e)))
         elif word == '@defaults':
             self.defaults = rest.strip('{} ')
         elif word == '@pronounce':
